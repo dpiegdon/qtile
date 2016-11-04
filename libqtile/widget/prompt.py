@@ -318,6 +318,8 @@ class Prompt(base._TextBox):
                 ("cursorblink", 0.5, "Cursor blink rate. 0 to disable."),
                 ("cursor_color", "bef098",
                  "Color for the cursor and text over it."),
+                ("cursor_style", "line",
+                 "How to render the cursor ('line' or 'block')"),
                 ("prompt", "{prompt}: ", "Text displayed at the prompt"),
                 ("record_history", True, "Keep a record of executed commands"),
                 ("max_history", 100,
@@ -459,11 +461,19 @@ class Prompt(base._TextBox):
             self.timeout_add(self.cursorblink, self._blink)
 
     def _highlight_text(self, text):
-        color = utils.hex(self.cursor_color)
-        text = '<span foreground="{0}">{1}</span>'.format(color, text)
+        fg = utils.hex(self.cursor_color)
+        if not self.background is None:
+            bg = utils.hex(self.background)
+        else:
+            bg = utils.hex('#000000')
         if self.show_cursor:
-            text = '<u>{}</u>'.format(text)
-        return text
+            if self.cursor_style == 'line':
+                text = '<u>{}</u>'.format(text)
+            elif self.cursor_style == 'block':
+                fg, bg = bg, fg
+        return '<span foreground="{0}" background="{1}">{2}</span>'.format(
+            fg, bg, text
+        )
 
     def _update(self):
         if self.active:
