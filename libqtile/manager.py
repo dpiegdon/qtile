@@ -993,7 +993,7 @@ class Qtile(command.CommandObject):
                     val = (0, 0)
                 if m.focus == "after":
                     self.cmd_focus_by_click(e)
-                self._drag = (x, y, val[0], val[1], m.commands)
+                self._drag = (x, y, val[0], val[1], m.commands, m.finish)
                 self.root.grab_pointer(
                     True,
                     xcbq.ButtonMotionMask |
@@ -1016,13 +1016,21 @@ class Qtile(command.CommandObject):
                 )
                 continue
             if isinstance(m, Drag):
+                ox, oy, rx, ry, cmd, finish = self._drag
+                if not finish is None:
+                    status, val = self.server.call(
+                        (finish.selectors, finish.name, finish.args, finish.kwargs))
+                    if status in (command.ERROR, command.EXCEPTION):
+                        logger.error(
+                            "Mouse command error %s: %s" % (finish.name, val)
+                        )
                 self._drag = None
                 self.root.ungrab_pointer()
 
     def handle_MotionNotify(self, e):
         if self._drag is None:
             return
-        ox, oy, rx, ry, cmd = self._drag
+        ox, oy, rx, ry, cmd, finish = self._drag
         dx = e.event_x - ox
         dy = e.event_y - oy
         if dx or dy:

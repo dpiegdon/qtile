@@ -79,6 +79,7 @@ class Drag(object):
     def __init__(self, modifiers, button, *commands, **kwargs):
         self.start = kwargs.get("start")
         self.focus = kwargs.get("focus", "before")
+        self.finish = kwargs.get("finish", None)
         self.modifiers = modifiers
         self.button = button
         self.commands = commands

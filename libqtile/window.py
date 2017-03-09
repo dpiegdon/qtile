@@ -1332,11 +1332,24 @@ class Window(_Window):
         """Set window dimensions to w and h"""
         self.tweak_float(w=w, h=h)
 
-    def cmd_get_position(self):
+    original_follow_mouse_focus = None
+
+    def cmd_get_position(self, disable_follow_mouse_focus=False):
+        if disable_follow_mouse_focus and self.original_follow_mouse_focus is None:
+            self.original_follow_mouse_focus = self.qtile.config.follow_mouse_focus
+            self.qtile.config.follow_mouse_focus = False
         return self.getposition()
 
-    def cmd_get_size(self):
+    def cmd_get_size(self, disable_follow_mouse_focus=False):
+        if disable_follow_mouse_focus and self.original_follow_mouse_focus is None:
+            self.original_follow_mouse_focus = self.qtile.config.follow_mouse_focus
+            self.qtile.config.follow_mouse_focus = False
         return self.getsize()
+
+    def cmd_reset_mouse_focus(self):
+        if not original_follow_mouse_focus is None:
+            self.qtile.config.follow_mouse_focus = self.original_follow_mouse_focus
+            self.original_follow_mouse_focus = None
 
     def cmd_toggle_floating(self):
         self.toggle_floating()
