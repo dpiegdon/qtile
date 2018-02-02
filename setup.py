@@ -105,7 +105,6 @@ setup(
         "Development Status :: 3 - Alpha",
         "Programming Language :: Python",
         "Programming Language :: Python :: 2.7",
-        "Programming Language :: Python :: 3.3",
         "Programming Language :: Python :: 3.4",
         "Programming Language :: Python :: 3.5",
         "Programming Language :: Python :: 3.6",
@@ -146,10 +145,12 @@ setup(
             'qtile-run = libqtile.scripts.qtile_run:main',
             'qtile-top = libqtile.scripts.qtile_top:main',
             'qshell = libqtile.scripts.qshell:main',
+            'qcmd = libqtile.scripts.qcmd:main',
         ]
     },
     scripts=[
         'bin/iqshell',
+        'bin/dqcmd',
     ],
     data_files=[
         ('share/man/man1', ['resources/qtile.1',

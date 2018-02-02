@@ -1,5 +1,4 @@
-# Copyright (c) 2014 Sean Vig
-# Copyright (c) 2014 Tycho Andersen
+# Copyright (c) 2018 Roger Duran
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -19,18 +18,12 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from __future__ import absolute_import
+from .base import _TextBox
 
-import six
 
-moves = [
-    six.MovedAttribute("getoutput", "commands", "subprocess"),
-    six.MovedModule("asyncio", "trollius", "asyncio"),
-]
-
-for m in moves:
-    six.add_move(m)
-
-# Keep supporting the deprecated misspelled subpackage "extention"
-# TODO: Remove in the future
-from . import extension as extention  # noqa
+def make_error(module_path, class_name, error):
+    class ImportErrorWidget(_TextBox):
+        def __init__(self, **config):
+            _TextBox.__init__(self, **config)
+            self.text = "Import Error: %s" % class_name
+    return ImportErrorWidget

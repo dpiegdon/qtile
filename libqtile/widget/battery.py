@@ -62,8 +62,16 @@ class _Battery(base._TextBox):
 
     filenames = {}
 
+    def _get_battery_name():
+        bats = [f for f in os.listdir(BAT_DIR) if f.startswith('BAT')]
+
+        if bats:
+            return bats[0]
+        else:
+            return 'BAT0'
+
     defaults = [
-        ('battery_name', 'BAT0', 'ACPI name of a battery, usually BAT0'),
+        ('battery_name', _get_battery_name(), 'ACPI name of a battery, usually BAT0'),
         (
             'status_file',
             'status',
