@@ -25,6 +25,11 @@ from abc import ABCMeta, abstractmethod
 
 from .. import command, configurable
 
+try:
+    from typing import Any, List, Tuple  # noqa: F401
+except ImportError:
+    pass
+
 
 @six.add_metaclass(ABCMeta)
 class Layout(command.CommandObject, configurable.Configurable):
@@ -38,7 +43,7 @@ class Layout(command.CommandObject, configurable.Configurable):
         None,
         "The name of this layout"
         " (usually the class' name in lowercase, e.g. 'max')"
-    )]
+    )]  # type: List[Tuple[str, Any, str]]
 
     def __init__(self, **config):
         # name is a little odd; we can't resolve it until the class is defined
@@ -572,6 +577,7 @@ class _ClientList(object):
             current=self._current_idx,
         )
 
+
 class _SimpleLayoutBase(Layout):
     """
     Basic layout class for simple layouts,
@@ -607,10 +613,14 @@ class _SimpleLayoutBase(Layout):
         return self.clients.focus_previous(window)
 
     def previous(self):
+        if self.clients.current_client is None:
+            return
         client = self.focus_previous(self.clients.current_client) or self.focus_last()
         self.group.focus(client, True)
 
     def next(self):
+        if self.clients.current_client is None:
+            return
         client = self.focus_next(self.clients.current_client) or self.focus_first()
         self.group.focus(client, True)
 

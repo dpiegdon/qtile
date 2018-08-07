@@ -22,8 +22,9 @@ from __future__ import division
 
 try:
     import tracemalloc
+    has_tracemalloc = True
 except ImportError:
-    tracemalloc = None
+    has_tracemalloc = False
 
 from libqtile.dgroups import DGroups
 from xcffib.xproto import EventMask, WindowError, AccessError, DrawableError
@@ -41,10 +42,11 @@ import xcffib.xproto
 import six
 import warnings
 
-from six.moves import asyncio
-
+from .asyncio_compat import asyncio
 from .config import Drag, Click, Screen, Match, Rule
+from .config import ScratchPad as ScratchPadConfig
 from .group import _Group
+from .scratchpad import ScratchPad
 from .log_utils import logger
 from .state import QtileState
 from .utils import QtileError, get_cache_dir
@@ -176,6 +178,14 @@ class Qtile(command.CommandObject):
 
         for i in self.groups:
             self.groupMap[i.name] = i
+
+        for grp in self.config.groups:
+            if isinstance(grp, ScratchPadConfig):
+                sp = ScratchPad(grp.name, grp.dropdowns, grp.label)
+                sp._configure([self.config.floating_layout],
+                              self.config.floating_layout, self)
+                self.groups.append(sp)
+                self.groupMap[sp.name] = sp
 
         self.setup_eventloop()
         self.server = command._Server(self.fname, self, config, self._eventloop)
@@ -412,27 +422,20 @@ class Qtile(command.CommandObject):
             )
             self.screens.append(s)
 
+    def _auto_modmasks(self):
+        yield 0
+        yield xcbq.ModMasks["lock"]
+        if self.numlockMask:
+            yield self.numlockMask
+            yield self.numlockMask | xcbq.ModMasks["lock"]
+
     def mapKey(self, key):
         self.keyMap[(key.keysym, key.modmask & self.validMask)] = key
         code = self.conn.keysym_to_keycode(key.keysym)
-        self.root.grab_key(
-            code,
-            key.modmask,
-            True,
-            xcffib.xproto.GrabMode.Async,
-            xcffib.xproto.GrabMode.Async,
-        )
-        if self.numlockMask:
+        for amask in self._auto_modmasks():
             self.root.grab_key(
                 code,
-                key.modmask | self.numlockMask,
-                True,
-                xcffib.xproto.GrabMode.Async,
-                xcffib.xproto.GrabMode.Async,
-            )
-            self.root.grab_key(
-                code,
-                key.modmask | self.numlockMask | xcbq.ModMasks["lock"],
+                key.modmask | amask,
                 True,
                 xcffib.xproto.GrabMode.Async,
                 xcffib.xproto.GrabMode.Async,
@@ -444,13 +447,8 @@ class Qtile(command.CommandObject):
             return
 
         code = self.conn.keysym_to_keycode(key.keysym)
-        self.root.ungrab_key(code, key.modmask)
-        if self.numlockMask:
-            self.root.ungrab_key(code, key.modmask | self.numlockMask)
-            self.root.ungrab_key(
-                code,
-                key.modmask | self.numlockMask | xcbq.ModMasks["lock"]
-            )
+        for amask in self._auto_modmasks():
+            self.root.ungrab_key(code, key.modmask | amask)
         del(self.keyMap[key_index])
 
     def update_net_desktops(self):
@@ -660,26 +658,10 @@ class Qtile(command.CommandObject):
             eventmask = EventMask.ButtonPress
             if isinstance(i, Drag):
                 eventmask |= EventMask.ButtonRelease
-            self.root.grab_button(
-                i.button_code,
-                i.modmask,
-                True,
-                eventmask,
-                grabmode,
-                xcffib.xproto.GrabMode.Async,
-            )
-            if self.numlockMask:
+            for amask in self._auto_modmasks():
                 self.root.grab_button(
                     i.button_code,
-                    i.modmask | self.numlockMask,
-                    True,
-                    eventmask,
-                    grabmode,
-                    xcffib.xproto.GrabMode.Async,
-                )
-                self.root.grab_button(
-                    i.button_code,
-                    i.modmask | self.numlockMask | xcbq.ModMasks["lock"],
+                    i.modmask | amask,
                     True,
                     eventmask,
                     grabmode,
@@ -763,8 +745,7 @@ class Qtile(command.CommandObject):
                 error_code = self.conn.conn.has_error()
                 if error_code:
                     error_string = xcbq.XCB_CONN_ERRORS[error_code]
-                    logger.exception("Shutting down due to X connection error %s (%s)" %
-                        (error_string, error_code))
+                    logger.exception("Shutting down due to X connection error %s (%s)" % (error_string, error_code))
                     self.stop()
                     return
 
@@ -1252,7 +1233,8 @@ class Qtile(command.CommandObject):
                 self.rows.append(row)
 
             def getformat(self):
-                return " ".join((["%-{0:d}s".format(max_col_size + 2) for max_col_size in self.max_col_size])) + "\n", len(self.max_col_size)
+                format_string = " ".join("%-{0:d}s".format(max_col_size + 2) for max_col_size in self.max_col_size)
+                return format_string + "\n", len(self.max_col_size)
 
             def expandlist(self, list, n):
                 if not list:
@@ -1275,7 +1257,10 @@ class Qtile(command.CommandObject):
                 continue
             name = ", ".join(xcbq.rkeysyms.get(ks, ("<unknown>", )))
             modifiers = ", ".join(utils.translate_modifiers(kmm))
-            allargs = ", ".join([repr(value) for value in k.commands[0].args] + ["%s = %s" % (keyword, repr(value)) for keyword, value in k.commands[0].kwargs.items()])
+            allargs = ", ".join(
+                [repr(value) for value in k.commands[0].args] +
+                ["%s = %s" % (keyword, repr(value)) for keyword, value in k.commands[0].kwargs.items()]
+            )
             rows.append((name, str(modifiers), "{0:s}({1:s})".format(k.commands[0].name, allargs), k.desc))
         rows.sort()
         for row in rows:
@@ -1658,7 +1643,7 @@ class Qtile(command.CommandObject):
                      widget="prompt", messenger="xmessage"):
         """ Execute a Qtile command using the client syntax
 
-        Tab completeion aids navigation of the command tree
+        Tab completion aids navigation of the command tree
 
         Parameters
         ==========
@@ -1810,6 +1795,10 @@ class Qtile(command.CommandObject):
 
         Running tracemalloc is required for qtile-top
         """
+        if not has_tracemalloc:
+            logger.warning('No tracemalloc module')
+            raise command.CommandError("No tracemalloc module")
+
         if not tracemalloc.is_tracing():
             tracemalloc.start()
         else:
@@ -1817,9 +1806,10 @@ class Qtile(command.CommandObject):
 
     def cmd_tracemalloc_dump(self):
         """Dump tracemalloc snapshot"""
-        if not tracemalloc:
+        if not has_tracemalloc:
             logger.warning('No tracemalloc module')
             raise command.CommandError("No tracemalloc module")
+
         if not tracemalloc.is_tracing():
             return [False, "Trace not started"]
         cache_directory = get_cache_dir()

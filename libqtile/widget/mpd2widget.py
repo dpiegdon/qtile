@@ -1,4 +1,5 @@
 from . import base
+from libqtile.log_utils import logger
 
 from six import u, text_type
 from socket import error as socket_error
@@ -26,6 +27,7 @@ play_states = {
     'stop': u('\u25a0'),
 }
 
+
 def option(char):
     def _convert(elements, key, space):
         if key in elements and elements[key] != '0':
@@ -33,6 +35,7 @@ def option(char):
         else:
             elements[key] = space
     return _convert
+
 
 prepare_status = {
     'repeat': option('r'),
@@ -92,7 +95,7 @@ class Mpd2(base.ThreadPoolText):
     ]
 
     def __init__(self, status_format=default_format,
-                prepare_status=prepare_status, **config):
+                 prepare_status=prepare_status, **config):
         super(Mpd2, self).__init__(None, **config)
         self.add_defaults(Mpd2.defaults)
         self.status_format = status_format
@@ -177,7 +180,12 @@ class Mpd2(base.ThreadPoolText):
         if not isinstance(fmt, text_type):
             fmt = u(fmt)
 
-        return fmt.format(play_status=play_status, **status)
+        try:
+            formatted = fmt.format(play_status=play_status, **status)
+            return formatted
+        except KeyError as e:
+            logger.exception("mpd client did not return status: {}".format(e.args[0]))
+            return "ERROR"
 
     def prepare_formatting(self, status, currentsong):
         for key in self.prepare_status:

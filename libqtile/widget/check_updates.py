@@ -61,26 +61,30 @@ class CheckUpdates(base.ThreadedPollText):
             self.cmd = None
 
     def _check_updates(self):
+        # type: () -> str
         try:
             updates = self.call_process(self.cmd)
         except CalledProcessError:
             updates = ""
-        num_updates = str(len(updates.splitlines()) - self.subtr)
+        num_updates = len(updates.splitlines()) - self.subtr
         self._set_colour(num_updates)
-        return self.display_format.format(**{"updates": num_updates})
+        return self.display_format.format(**{"updates": str(num_updates)})
 
     def _set_colour(self, num_updates):
+        # type: (int) -> None
         if num_updates:
             self.layout.colour = self.colour_have_updates
         else:
             self.layout.colour = self.colour_no_updates
 
     def poll(self):
+        # type: () -> str
         if not self.cmd:
             return "N/A"
         return self._check_updates()
 
     def button_press(self, x, y, button):
+        # type: (int, int, int) -> None
         base.ThreadedPollText.button_press(self, x, y, button)
         if button == 1 and self.execute is not None:
             Popen(self.execute, shell=True)

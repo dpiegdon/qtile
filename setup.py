@@ -86,7 +86,7 @@ if '_cffi_backend' in sys.builtin_module_names: # pypy has cffi builtin
 else:
     requires_cffi = "cffi>=1.1.0"
 
-dependencies = ['xcffib>=0.5.0', 'cairocffi>=0.7', 'six>=1.4.1', requires_cffi]
+dependencies = ['xcffib>=0.5.0', 'cairocffi>=0.7[xcb]', 'six>=1.4.1', requires_cffi]
 if sys.version_info >= (3, 4):
     pass
 elif sys.version_info >= (3, 3):
@@ -96,7 +96,7 @@ else:
 
 setup(
     name="qtile",
-    version="0.10.7",
+    version="0.12.0",
     description="A pure-Python tiling window manager.",
     long_description=long_description,
     classifiers=[
@@ -141,16 +141,16 @@ setup(
     ]},
     entry_points={
         'console_scripts': [
+            'qshell = libqtile.scripts.qshell:main',
             'qtile = libqtile.scripts.qtile:main',
+            'qtile-cmd = libqtile.scripts.qtile_cmd:main',
             'qtile-run = libqtile.scripts.qtile_run:main',
             'qtile-top = libqtile.scripts.qtile_top:main',
-            'qshell = libqtile.scripts.qshell:main',
-            'qcmd = libqtile.scripts.qcmd:main',
         ]
     },
     scripts=[
+        'bin/dqtile-cmd',
         'bin/iqshell',
-        'bin/dqcmd',
     ],
     data_files=[
         ('share/man/man1', ['resources/qtile.1',

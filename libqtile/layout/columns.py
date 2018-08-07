@@ -20,6 +20,7 @@ from __future__ import division
 
 from .base import Layout, _ClientList
 
+
 class _Column(_ClientList):
 
     # shortcuts for current client and index used in Columns layout
@@ -76,11 +77,11 @@ class Columns(Layout):
     """Extension of the Stack layout.
 
     The screen is split into columns, which can be dynamically added or
-    removed.  Each column displays either a sigle window at a time from a
-    stack of windows or all of them simultaneously, spliting the column
-    space.  Columns and windows can be resized and windows can be shuffled
-    around.  This layout can also emulate "Wmii", "Verical", and "Max",
-    depending on the default parameters.
+    removed.  Each column displays either a single window at a time from a
+    stack of windows or all of them simultaneously, spliting the column space.
+    Columns and windows can be resized and windows can be shuffled around.
+    This layout can also emulate "Wmii", "Verical", and "Max", depending on the
+    default parameters.
 
     An example key configuration is::
 
@@ -214,17 +215,16 @@ class Columns(Layout):
                 if client == c:
                     break
                 pos += col.heights[c]
-            height = int(0.5 + col.heights[client] * screen.height * 0.01 /
-                    len(col))
+            height = int(0.5 + col.heights[client] * screen.height * 0.01 / len(col))
             y = screen.y + int(0.5 + pos * screen.height * 0.01 / len(col))
             client.place(x, y, width - 2 * border,
-                    height - 2 * border, border,
-                    color, margin=self.margin)
+                         height - 2 * border, border,
+                         color, margin=self.margin)
             client.unhide()
         elif client == col.cw:
             client.place(x, screen.y, width - 2 * border,
-                    screen.height - 2 * border, border,
-                    color, margin=self.margin)
+                         screen.height - 2 * border, border,
+                         color, margin=self.margin)
             client.unhide()
         else:
             client.hide()

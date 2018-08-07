@@ -28,13 +28,14 @@ from os import path, getenv
 from libqtile.log_utils import init_log, logger
 from libqtile import confreader
 
-locale.setlocale(locale.LC_ALL, locale.getdefaultlocale())
+locale.setlocale(locale.LC_ALL, locale.getdefaultlocale())  # type: ignore
 
 try:
     import pkg_resources
     VERSION = pkg_resources.require("qtile")[0].version
 except (pkg_resources.DistributionNotFound, ImportError):
     VERSION = 'dev'
+
 
 def rename_process():
     """
@@ -50,6 +51,7 @@ def rename_process():
         setproctitle.setproctitle("qtile")
     except ImportError:
         pass
+
 
 def make_qtile():
     from argparse import ArgumentParser
@@ -109,7 +111,7 @@ def make_qtile():
         from libqtile.widget import TextBox
         widgets = config.screens[0].bottom.widgets
         widgets.insert(0, TextBox('Config Err!'))
-    # XXX: the import is here becouse we need to call init_log
+    # XXX: the import is here because we need to call init_log
     # before start importing stuff
     from libqtile import manager
     return manager.Qtile(

@@ -155,7 +155,7 @@ def _float_setter(attr):
 
 
 class _Window(command.CommandObject):
-    _windowMask = None  # override in child class
+    _windowMask = 0  # override in child class
 
     def __init__(self, window, qtile):
         self.window, self.qtile = window, qtile
@@ -214,14 +214,22 @@ class _Window(command.CommandObject):
 
     x = property(fset=_geometry_setter("x"), fget=_geometry_getter("x"))
     y = property(fset=_geometry_setter("y"), fget=_geometry_getter("y"))
-    width = property(
-        fset=_geometry_setter("width"),
-        fget=_geometry_getter("width")
-    )
-    height = property(
-        fset=_geometry_setter("height"),
-        fget=_geometry_getter("height")
-    )
+
+    @property
+    def width(self):
+        return _geometry_getter("width")(self)
+
+    @width.setter
+    def width(self, value):
+        _geometry_setter("width")(self, value)
+
+    @property
+    def height(self):
+        return _geometry_getter("height")(self)
+
+    @height.setter
+    def height(self, value):
+        _geometry_setter("height")(self, value)
 
     float_x = property(
         fset=_float_setter("x"),
@@ -573,8 +581,7 @@ class _Window(command.CommandObject):
             self.urgent = False
 
             atom = self.qtile.conn.atoms["_NET_WM_STATE_DEMANDS_ATTENTION"]
-            state = list(self.window.get_property('_NET_WM_STATE', 'ATOM',
-                unpack=int))
+            state = list(self.window.get_property('_NET_WM_STATE', 'ATOM', unpack=int))
 
             if atom in state:
                 state.remove(atom)
@@ -583,7 +590,7 @@ class _Window(command.CommandObject):
         self.qtile.root.set_property("_NET_ACTIVE_WINDOW", self.window.wid)
         hook.fire("client_focus", self)
 
-    def _items(self, name, sel):
+    def _items(self, name):
         return None
 
     def _select(self, name, sel):
@@ -951,6 +958,7 @@ class Window(_Window):
 
     def tweak_float(self, x=None, y=None, dx=0, dy=0,
                     w=None, h=None, dw=0, dh=0):
+        print(x, y)
         if x is not None:
             self.x = x
         self.x += dx
@@ -1000,6 +1008,7 @@ class Window(_Window):
             if self.hints['base_height'] and self.hints['height_inc']:
                 height -= (height - self.hints['base_height']) % self.hints['height_inc']
 
+            print("placing", self.x, self.y, width, height)
             self.place(
                 self.x, self.y,
                 width, height,
@@ -1192,7 +1201,11 @@ class Window(_Window):
                 self.group.focus(self)
             else:  # XCB_EWMH_CLIENT_SOURCE_TYPE_OTHER
                 focus_behavior = self.qtile.config.focus_on_window_activation
-                if focus_behavior == "focus" or (focus_behavior == "smart" and self.group.screen and self.group.screen == self.qtile.currentScreen):
+                if focus_behavior == "focus":
+                    logger.info("Focusing window")
+                    self.qtile.currentScreen.setGroup(self.group)
+                    self.group.focus(self)
+                elif focus_behavior == "smart" and self.group.screen and self.group.screen == self.qtile.currentScreen:
                     logger.info("Focusing window")
                     self.qtile.currentScreen.setGroup(self.group)
                     self.group.focus(self)

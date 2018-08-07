@@ -34,6 +34,7 @@
 import glob
 import os
 import pickle
+import six
 import string
 from collections import OrderedDict, deque
 
@@ -385,7 +386,7 @@ class Prompt(base._TextBox):
                     # self.history of size does not match.
                     if len(self.history) != len(self.completers):
                         self.history = {x: deque(maxlen=self.max_history)
-                                for x in self.completers}
+                                        for x in self.completers}
 
                     if self.max_history != \
                        self.history[list(self.history)[0]].maxlen:
@@ -571,6 +572,13 @@ class Prompt(base._TextBox):
 
                 if self.position < self.max_history:
                     self.position += 1
+                if six.PY3:
+                    os.makedirs(os.path.dirname(self.history_path), exist_ok=True)
+                else:
+                    try:
+                        os.makedirs(os.path.dirname(self.history_path))
+                    except OSError:  # file exists
+                        pass
                 with open(self.history_path, mode='wb') as f:
                     pickle.dump(self.history, f, protocol=2)
             self.callback(self.userInput)
@@ -731,6 +739,7 @@ class Prompt(base._TextBox):
 
     def _dedup_deque(self, dq):
         return deque(_LastUpdatedOrderedDict.fromkeys(dq))
+
 
 class _LastUpdatedOrderedDict(OrderedDict):
     """Store items in the order the keys were last added."""
