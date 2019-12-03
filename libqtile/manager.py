@@ -40,6 +40,7 @@ import xcffib
 import xcffib.xinerama
 import xcffib.xproto
 import six
+import time
 import warnings
 
 from .asyncio_compat import asyncio
@@ -741,7 +742,7 @@ class Qtile(command.CommandObject):
             except (WindowError, AccessError, DrawableError):
                 pass
 
-            except Exception as e:
+            except Exception:
                 error_code = self.conn.conn.has_error()
                 if error_code:
                     error_string = xcbq.XCB_CONN_ERRORS[error_code]
@@ -752,7 +753,52 @@ class Qtile(command.CommandObject):
                 logger.exception("Got an exception in poll loop")
         self.conn.flush()
 
+    def graceful_shutdown(self):
+        """
+        Try and gracefully shutdown windows before exiting with SIGTERM, vs.
+        just closing the X session and having the X server send them all
+        SIGKILL.
+        """
+
+        def get_interesting_pid(win):
+            # We don't need to kill Internal or Static windows, they're qtile
+            # managed and don't have any state.
+            if not isinstance(win, window.Window):
+                return None
+            return win.window.get_net_wm_pid()
+        pids = map(get_interesting_pid, self.windowMap.values())
+        pids = list(filter(lambda x: x is not None, pids))
+
+        # Give the windows a chance to shut down nicely.
+        for pid in pids:
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except OSError:
+                # might have died recently
+                pass
+
+        def still_alive(pid):
+            # most pids will not be children, so we can't use wait()
+            try:
+                os.kill(pid, 0)
+                return True
+            except OSError:
+                return False
+
+        # give everyone a little time to exit and write their state. but don't
+        # sleep forever (1s).
+        for i in range(10):
+            pids = list(filter(still_alive, pids))
+            if len(pids) == 0:
+                break
+            time.sleep(0.1)
+
     def stop(self):
+        # stop gets called in a variety of ways, including from restart().
+        # let's only do a real shutdown if we're not about to re-exec.
+        if not self._restart:
+            self.graceful_shutdown()
+
         logger.info('Stopping eventloop')
         self._eventloop.stop()
 
@@ -1195,6 +1241,12 @@ class Qtile(command.CommandObject):
         """Set log level to CRITICAL"""
         logger.setLevel(logging.CRITICAL)
         logger.critical('Switching to CRITICAL threshold')
+
+    def cmd_loglevel(self):
+        return logger.level
+
+    def cmd_loglevelname(self):
+        return logging.getLevelName(logger.level)
 
     def cmd_pause(self):
         """Drops into pdb"""
@@ -1658,7 +1710,7 @@ class Qtile(command.CommandObject):
         def f(cmd):
             if cmd:
                 # c here is used in eval() below
-                c = command.CommandRoot(self)  # noqa
+                c = command.CommandRoot(self)  # noqa: F841
                 try:
                     cmd_arg = str(cmd).split(' ')
                 except AttributeError:
@@ -1688,9 +1740,9 @@ class Qtile(command.CommandObject):
             return
         mb.startInput(prompt, f, "qshell")
 
-    def cmd_addgroup(self, group, label=None):
+    def cmd_addgroup(self, group, label=None, layout=None, layouts=None):
         """Add a group with the given name"""
-        return self.addGroup(group, label=label)
+        return self.addGroup(name=group, layout=layout, layouts=layouts, label=label)
 
     def cmd_delgroup(self, group):
         """Delete a group with the given name"""

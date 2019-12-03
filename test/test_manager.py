@@ -25,6 +25,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import logging
 import pytest
 import subprocess
 import time
@@ -38,6 +39,7 @@ import libqtile.manager
 import libqtile.config
 import libqtile.hook
 import libqtile.confreader
+
 
 from .conftest import whereis, BareConfig, no_xinerama, retry
 
@@ -176,6 +178,7 @@ def test_togroup(qtile):
 def test_resize(qtile):
     self = qtile
     self.c.screen[0].resize(x=10, y=10, w=100, h=100)
+
     @retry(ignore_exceptions=(AssertionError), fail_msg="Screen didn't resize")
     def run():
         d = self.c.screen[0].info()
@@ -226,11 +229,13 @@ def test_spawn_list(qtile):
     # Spawn something with a pid greater than init's
     assert int(qtile.c.spawn(["echo", "true"])) > 1
 
+
 @retry(ignore_exceptions=(AssertionError,), fail_msg='Window did not die!')
 def assert_window_died(client, window_info):
     client.sync()
     wid = window_info['id']
     assert wid not in set([x['id'] for x in client.windows()])
+
 
 @manager_config
 @no_xinerama
@@ -240,6 +245,7 @@ def test_kill_window(qtile):
     window_info = qtile.c.window.info()
     qtile.c.window[window_info["id"]].kill()
     assert_window_died(qtile.c, window_info)
+
 
 @manager_config
 @no_xinerama
@@ -263,6 +269,7 @@ def test_kill_other(qtile):
     assert self.c.window.info()["name"] == "two"
     assert self.c.window.info()["width"] == 798
     assert self.c.window.info()["height"] == 578
+    self.kill_window(two)
 
 
 @manager_config
@@ -310,6 +317,7 @@ def test_adddelgroup(qtile):
     self.c.addgroup("dummygroup")
     self.c.addgroup("testgroup")
     assert "testgroup" in self.c.groups().keys()
+
     self.c.window.togroup("testgroup")
     self.c.delgroup("testgroup")
     assert "testgroup" not in self.c.groups().keys()
@@ -320,6 +328,10 @@ def test_adddelgroup(qtile):
         self.c.delgroup(i)
     with pytest.raises(libqtile.command.CommandException):
         self.c.delgroup(list(self.c.groups().keys())[0])
+
+    # Assert that setting layout via cmd_addgroup works
+    self.c.addgroup("testgroup2", layout='max')
+    assert self.c.groups()["testgroup2"]['layout'] == 'max'
 
 
 @manager_config
@@ -795,6 +807,7 @@ def test_resize_(qtile):
             "-display", self.display
         ]
     )
+
     @retry(ignore_exceptions=(AssertionError,), fail_msg="Screen did not resize")
     def run():
         d = self.c.screen.info()
@@ -1052,3 +1065,24 @@ def test_minimal__(qtile):
 def test_colorPixel(qtile):
     # test for #394
     qtile.c.eval("self.colorPixel(\"ffffff\")")
+
+
+@manager_config
+def test_change_loglevel(qtile):
+    assert qtile.c.loglevel() == logging.INFO
+    assert qtile.c.loglevelname() == 'INFO'
+    qtile.c.debug()
+    assert qtile.c.loglevel() == logging.DEBUG
+    assert qtile.c.loglevelname() == 'DEBUG'
+    qtile.c.info()
+    assert qtile.c.loglevel() == logging.INFO
+    assert qtile.c.loglevelname() == 'INFO'
+    qtile.c.warning()
+    assert qtile.c.loglevel() == logging.WARNING
+    assert qtile.c.loglevelname() == 'WARNING'
+    qtile.c.error()
+    assert qtile.c.loglevel() == logging.ERROR
+    assert qtile.c.loglevelname() == 'ERROR'
+    qtile.c.critical()
+    assert qtile.c.loglevel() == logging.CRITICAL
+    assert qtile.c.loglevelname() == 'CRITICAL'
