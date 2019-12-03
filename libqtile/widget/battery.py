@@ -124,12 +124,12 @@ class _FreeBSDBattery(_Battery):
         except CalledProcessError:
             raise RuntimeError('acpiconf exited incorrectly')
 
-        stat = re.search(r'State:\t+([a-z]+)', info)
+        stat_match = re.search(r'State:\t+([a-z]+)', info)
 
-        if stat is None:
+        if stat_match is None:
             raise RuntimeError('Could not get battery state!')
 
-        stat = stat.group(1)
+        stat = stat_match.group(1)
         if stat == 'charging':
             state = BatteryState.CHARGING
         elif stat == 'discharging':
@@ -209,6 +209,8 @@ class _LinuxBattery(_Battery, configurable.Configurable):
 
         configurable.Configurable.__init__(self, **config)
         self.add_defaults(_LinuxBattery.defaults)
+        if isinstance(self.battery, int):
+            self.battery = "BAT{}".format(self.battery)
 
     def _get_battery_name(self):
         if os.path.isdir(self.BAT_DIR):
@@ -218,21 +220,21 @@ class _LinuxBattery(_Battery, configurable.Configurable):
         return 'BAT0'
 
     def _load_file(self, name) -> Optional[Tuple[str, str]]:
-        try:
-            path = os.path.join(self.BAT_DIR, self.battery, name)
-            if 'energy' in name or 'power' in name:
-                value_type = 'uW'
-            elif 'charge' in name:
-                value_type = 'uAh'
-            elif 'current' in name:
-                value_type = 'uA'
-            else:
-                value_type = ''
+        path = os.path.join(self.BAT_DIR, self.battery, name)
+        if 'energy' in name or 'power' in name:
+            value_type = 'uW'
+        elif 'charge' in name:
+            value_type = 'uAh'
+        elif 'current' in name:
+            value_type = 'uA'
+        else:
+            value_type = ''
 
+        try:
             with open(path, 'r') as f:
                 return f.read().strip(), value_type
-        except Exception:
-            logger.exception("Failed to get %s" % name)
+        except FileNotFoundError:
+            logger.debug("Failed to get %s" % name)
         return None
 
     def _get_param(self, name) -> Tuple[str, str]:
@@ -284,18 +286,18 @@ class _LinuxBattery(_Battery, configurable.Configurable):
         else:
             percent = now / full
 
-        if power_unit == 'uA':
-            voltage = float(self._get_param('voltage_now_file')[0])
-            power = voltage * power / 1e12
-        elif power_unit == 'uW':
-            power = power / 1e6
-
         if power == 0:
             time = 0
         elif state == BatteryState.DISCHARGING:
             time = int(now / power)
         else:
             time = int((full - now) / power)
+
+        if power_unit == 'uA':
+            voltage = float(self._get_param('voltage_now_file')[0])
+            power = voltage * power / 1e12
+        elif power_unit == 'uW':
+            power = power / 1e6
 
         return BatteryStatus(state=state, percent=percent, power=power, time=time)
 
@@ -315,7 +317,7 @@ class Battery(base.ThreadedPollText):
         ('low_percentage', 0.10, "Indicates when to use the low_foreground color 0 < x < 1"),
         ('low_foreground', 'FF0000', 'Font color on low battery'),
         ('update_interval', 60, 'Seconds between status updates'),
-        ('battery', 0, 'Which battery should be monitored'),
+        ('battery', 0, 'Which battery should be monitored (battery number or name)'),
     ]
 
     def __init__(self, **config) -> None:
@@ -324,7 +326,7 @@ class Battery(base.ThreadedPollText):
                           DeprecationWarning)
             config["update_interval"] = config.pop("update_delay")
 
-        base.ThreadedPollText.__init__(self, "BAT", bar.CALCULATED, **config)
+        base.ThreadedPollText.__init__(self, **config)
         self.add_defaults(self.defaults)
 
         self._battery = self._load_battery(**config)

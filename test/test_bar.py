@@ -22,7 +22,9 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import os
 import pytest
+import tempfile
 
 import libqtile.layout
 import libqtile.bar
@@ -103,7 +105,18 @@ def test_completion():
     c.reset()
     assert c.complete("/bin") != "/bin/"
     c.reset()
-    assert c.complete("~") != "~"
+
+    home_dir = os.path.expanduser("~")
+    with tempfile.TemporaryDirectory(prefix="qtile_test_",
+                                     dir=home_dir) as absolute_tmp_path:
+        tmp_dirname = absolute_tmp_path[len(home_dir + os.sep):]
+        user_input = os.path.join("~", tmp_dirname)
+        assert c.complete(user_input) == user_input
+
+        c.reset()
+        test_bin_dir = os.path.join(absolute_tmp_path, "qtile-test-bin")
+        os.mkdir(test_bin_dir)
+        assert c.complete(user_input) == os.path.join(user_input, "qtile-test-bin") + os.sep
 
     c.reset()
     s = "thisisatotallynonexistantpathforsure"

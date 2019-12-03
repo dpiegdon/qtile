@@ -45,11 +45,16 @@ from ..state import QtileState
 from ..utils import QtileError, get_cache_dir
 from ..widget.base import _Widget
 from ..extension.base import _Extension
-from .. import command
 from .. import hook
 from .. import utils
 from .. import window
 from . import xcbq
+from libqtile import command_interface
+from libqtile.command_client import InteractiveCommandClient
+from libqtile.command_interface import QtileCommandInterface, IPCCommandServer
+from libqtile.command_object import CommandObject, CommandError, CommandException
+from libqtile.ipc import find_sockfile
+from libqtile.lazy import lazy
 
 
 def _import_module(module_name, dir_path):
@@ -64,7 +69,7 @@ def _import_module(module_name, dir_path):
     return module
 
 
-class Qtile(command.CommandObject):
+class Qtile(CommandObject):
     """This object is the `root` of the command graph"""
     def __init__(
         self,
@@ -93,7 +98,7 @@ class Qtile(command.CommandObject):
             display_number = display_name.partition(":")[2]
             if "." not in display_number:
                 display_name += ".0"
-            fname = command.find_sockfile(display_name)
+            fname = find_sockfile(display_name)
 
         self.conn = xcbq.Connection(display_name)
         self.config = config
@@ -181,7 +186,7 @@ class Qtile(command.CommandObject):
                 self.groups_map[sp.name] = sp
 
         self.setup_eventloop()
-        self.server = command._Server(self.fname, self, config, self._eventloop)
+        self.server = IPCCommandServer(self.fname, self, self._eventloop)
 
         self.current_screen = None
         self.screens = []
@@ -212,7 +217,7 @@ class Qtile(command.CommandObject):
         # It fixes problems with focus when clicking windows of some specific clients like xterm
         def noop(qtile):
             pass
-        self.config.mouse += (Click([], "Button1", command.lazy.function(noop), focus="after"),)
+        self.config.mouse += (Click([], "Button1", lazy.function(noop), focus="after"),)
 
         self.mouse_map = {}
         for i in self.config.mouse:
@@ -770,7 +775,11 @@ class Qtile(command.CommandObject):
             # managed and don't have any state.
             if not isinstance(win, window.Window):
                 return None
-            return win.window.get_net_wm_pid()
+            try:
+                return win.window.get_net_wm_pid()
+            except Exception:
+                logger.exception("Got an exception in getting the window pid")
+                return None
         pids = map(get_interesting_pid, self.windows_map.values())
         pids = list(filter(lambda x: x is not None, pids))
 
@@ -951,7 +960,7 @@ class Qtile(command.CommandObject):
                 status, val = self.server.call(
                     (i.selectors, i.name, i.args, i.kwargs)
                 )
-                if status in (command.ERROR, command.EXCEPTION):
+                if status in (command_interface.ERROR, command_interface.EXCEPTION):
                     logger.error("KB command error %s: %s" % (i.name, val))
         else:
             return
@@ -1008,7 +1017,7 @@ class Qtile(command.CommandObject):
                             (i.selectors, i.name, i.args, i.kwargs))
                         if m.focus == "after":
                             self.cmd_focus_by_click(e)
-                        if status in (command.ERROR, command.EXCEPTION):
+                        if status in (command_interface.ERROR, command_interface.EXCEPTION):
                             logger.error(
                                 "Mouse command error %s: %s" % (i.name, val)
                             )
@@ -1021,7 +1030,7 @@ class Qtile(command.CommandObject):
                         self.cmd_focus_by_click(e)
                     status, val = self.server.call(
                         (i.selectors, i.name, i.args, i.kwargs))
-                    if status in (command.ERROR, command.EXCEPTION):
+                    if status in (command_interface.ERROR, command_interface.EXCEPTION):
                         logger.error(
                             "Mouse command error %s: %s" % (i.name, val)
                         )
@@ -1069,10 +1078,10 @@ class Qtile(command.CommandObject):
                     status, val = self.server.call((
                         i.selectors,
                         i.name,
-                        i.args + (rx + dx, ry + dy, e.event_x, e.event_y),
+                        i.args + (rx + dx, ry + dy),
                         i.kwargs
                     ))
-                    if status in (command.ERROR, command.EXCEPTION):
+                    if status in (command_interface.ERROR, command_interface.EXCEPTION):
                         logger.error(
                             "Mouse command error %s: %s" % (i.name, val)
                         )
@@ -1419,7 +1428,7 @@ class Qtile(command.CommandObject):
             modmasks = xcbq.translate_masks(modifiers)
             keysym = xcbq.keysyms.get(key)
         except xcbq.XCBQError as e:
-            raise command.CommandError(str(e))
+            raise CommandError(str(e))
 
         class DummyEv:
             pass
@@ -1704,8 +1713,8 @@ class Qtile(command.CommandObject):
             logger.error("No widget named '{0:s}' present.".format(widget))
 
     def cmd_qtilecmd(self, prompt="command",
-                     widget="prompt", messenger="xmessage"):
-        """ Execute a Qtile command using the client syntax
+                     widget="prompt", messenger="xmessage") -> None:
+        """Execute a Qtile command using the client syntax
 
         Tab completion aids navigation of the command tree
 
@@ -1722,7 +1731,8 @@ class Qtile(command.CommandObject):
         def f(cmd):
             if cmd:
                 # c here is used in eval() below
-                c = command.CommandRoot(self)  # noqa: F841
+                q = QtileCommandInterface(self)
+                c = InteractiveCommandClient(q)  # noqa: F841
                 try:
                     cmd_arg = str(cmd).split(' ')
                 except AttributeError:
@@ -1733,10 +1743,7 @@ class Qtile(command.CommandObject):
                     return
                 try:
                     result = eval(u'c.{0:s}'.format(cmd))
-                except (
-                        command.CommandError,
-                        command.CommandException,
-                        AttributeError) as err:
+                except (CommandError, CommandException, AttributeError) as err:
                     logger.error(err)
                     result = None
                 if result is not None:

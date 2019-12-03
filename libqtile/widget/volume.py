@@ -58,8 +58,8 @@ class Volume(base._TextBox):
         ("device", "default", "Device Name"),
         ("channel", "Master", "Channel"),
         ("padding", 3, "Padding left and right. Calculated if None."),
-        ("theme_path", None, "Path of the icons"),
         ("update_interval", 0.2, "Update time in seconds."),
+        ("theme_path", None, "Path of the icons"),
         ("emoji", False, "Use emoji to display volume states, only if ``theme_path`` is not set."
                          "The specified font needs to contain the correct unicode characters."),
         ("mute_command", None, "Mute command"),
@@ -100,23 +100,23 @@ class Volume(base._TextBox):
     def button_press(self, x, y, button):
         if button == BUTTON_DOWN:
             if self.volume_down_command is not None:
-                subprocess.call(self.volume_down_command)
+                subprocess.call(self.volume_down_command, shell=True)
             else:
                 subprocess.call(self.create_amixer_command('-q',
                                                            'sset',
                                                            self.channel,
-                                                           '%d%%-' % self.step))
+                                                           '{}%-'.format(self.step)))
         elif button == BUTTON_UP:
             if self.volume_up_command is not None:
-                subprocess.call(self.volume_up_command)
+                subprocess.call(self.volume_up_command, shell=True)
             else:
                 subprocess.call(self.create_amixer_command('-q',
                                                            'sset',
                                                            self.channel,
-                                                           '%d%%+' % self.step))
+                                                           '{}%+'.format(self.step)))
         elif button == BUTTON_MUTE:
             if self.mute_command is not None:
-                subprocess.call(self.mute_command)
+                subprocess.call(self.mute_command, shell=True)
             else:
                 subprocess.call(self.create_amixer_command('-q',
                                                            'sset',
@@ -124,7 +124,7 @@ class Volume(base._TextBox):
                                                            'toggle'))
         elif button == BUTTON_RIGHT:
             if self.volume_app is not None:
-                subprocess.Popen(self.volume_app)
+                subprocess.Popen(self.volume_app, shell=True)
 
         self.draw()
 
@@ -165,7 +165,7 @@ class Volume(base._TextBox):
             if self.volume == -1:
                 self.text = 'M'
             else:
-                self.text = '%s%%' % self.volume
+                self.text = '{}%'.format(self.volume)
 
     def setup_images(self):
         from .. import images

@@ -26,6 +26,8 @@ matrix:
           env: TOXENV=mypy
 
     allow_failures:
+        - python: pypy3
+          env: TOXENV=pypy3
         - python: nightly
           env: TOXENV=py-nightly
 
@@ -36,11 +38,13 @@ cache:
 addons:
   apt:
     packages:
+    - gkrellm
+    - graphviz # for docs
+    - imagemagick
     - x11-apps
     - xserver-xephyr
-    - xvfb
-    - graphviz # for docs
     - xterm
+    - xvfb
 
 
 install:

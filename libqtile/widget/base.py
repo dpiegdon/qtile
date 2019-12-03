@@ -29,13 +29,14 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from libqtile.log_utils import logger
-from .. import command, bar, configurable, drawer, confreader
 import subprocess
 import threading
 import warnings
-
 from typing import Any, List, Tuple  # noqa: F401
+
+from libqtile.log_utils import logger
+from libqtile.command_object import CommandObject, CommandError
+from .. import bar, configurable, drawer, confreader
 
 
 # Each widget class must define which bar orientation(s) it supports by setting
@@ -78,7 +79,7 @@ ORIENTATION_VERTICAL = _Orientations(2, 'vertical only')
 ORIENTATION_BOTH = _Orientations(3, 'horizontal and vertical')
 
 
-class _Widget(command.CommandObject, configurable.Configurable):
+class _Widget(CommandObject, configurable.Configurable):
     """Base Widget class
 
     If length is set to the special value `bar.STRETCH`, the bar itself will
@@ -101,7 +102,7 @@ class _Widget(command.CommandObject, configurable.Configurable):
         """
             length: bar.STRETCH, bar.CALCULATED, or a specified length.
         """
-        command.CommandObject.__init__(self)
+        CommandObject.__init__(self)
         self.name = self.__class__.__name__.lower()
         if "name" in config:
             self.name = config["name"]
@@ -214,7 +215,7 @@ class _Widget(command.CommandObject, configurable.Configurable):
         """
         w = q.widgets_map.get(name)
         if not w:
-            raise command.CommandError("No such widget: %s" % name)
+            raise CommandError("No such widget: %s" % name)
         return w
 
     def _items(self, name):
@@ -291,13 +292,14 @@ class _TextBox(_Widget):
             None,
             "font shadow color, default is None(no shadow)"
         ),
-        ("markup", False, "Whether or not to use pango markup"),
+        ("markup", True, "Whether or not to use pango markup"),
+        ("fmt", "{}", "How to format the text")
     ]  # type: List[Tuple[str, Any, str]]
 
     def __init__(self, text=" ", width=bar.CALCULATED, **config):
         self.layout = None
         _Widget.__init__(self, width, **config)
-        self.text = text
+        self._text = text
         self.add_defaults(_TextBox.defaults)
 
     @property
@@ -306,10 +308,13 @@ class _TextBox(_Widget):
 
     @text.setter
     def text(self, value):
-        assert value is None or isinstance(value, str)
         self._text = value
         if self.layout:
-            self.layout.text = value
+            self.layout.text = self.formatted_text
+
+    @property
+    def formatted_text(self):
+        return self.fmt.format(self._text)
 
     @property
     def foreground(self):
@@ -353,7 +358,7 @@ class _TextBox(_Widget):
         if self.fontsize is None:
             self.fontsize = self.bar.height - self.bar.height / 5
         self.layout = self.drawer.textlayout(
-            self.text,
+            self.formatted_text,
             self.foreground,
             self.font,
             self.fontsize,
@@ -398,7 +403,7 @@ class _TextBox(_Widget):
     def info(self):
         d = _Widget.info(self)
         d['foreground'] = self.foreground
-        d['text'] = self.text
+        d['text'] = self.formatted_text
         return d
 
 

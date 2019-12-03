@@ -20,12 +20,6 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-import libqtile
-import libqtile.ipc
-from libqtile.core.manager import Qtile as QtileManager
-from libqtile.core import xcore
-from libqtile.log_utils import init_log
-from libqtile.resources import default_config
 
 import functools
 import logging
@@ -41,6 +35,14 @@ import traceback
 import xcffib
 import xcffib.testing
 import xcffib.xproto
+
+import libqtile.config
+from libqtile.core.manager import Qtile as QtileManager
+from libqtile.core import xcore
+from libqtile.log_utils import init_log
+from libqtile.resources import default_config
+from libqtile import command_client, command_interface, ipc
+from libqtile.lazy import lazy
 
 # the default sizes for the Xephyr windows
 WIDTH = 800
@@ -95,9 +97,11 @@ def can_connect_x11(disp=':0'):
     return True
 
 
-@Retry(ignore_exceptions=(libqtile.ipc.IPCError,), return_on_fail=True)
+@Retry(ignore_exceptions=(ipc.IPCError,), return_on_fail=True)
 def can_connect_qtile(socket_path):
-    client = libqtile.command.Client(socket_path)
+    ipc_client = ipc.Client(socket_path)
+    ipc_command = command_interface.IPCCommandInterface(ipc_client)
+    client = command_client.InteractiveCommandClient(ipc_command)
     val = client.status()
     if val == 'OK':
         return True
@@ -130,12 +134,12 @@ class BareConfig:
         libqtile.config.Key(
             ["control"],
             "k",
-            libqtile.command._Call([("layout", None)], "up")
+            lazy.layout.up(),
         ),
         libqtile.config.Key(
             ["control"],
             "j",
-            libqtile.command._Call([("layout", None)], "down")
+            lazy.layout.down(),
         ),
     ]
     mouse = []
@@ -246,9 +250,10 @@ class Qtile:
     is done.  Windows can be spawned for the qtile instance to interact with
     with various `.test_*` methods.
     """
-    def __init__(self, sockfile, display):
+    def __init__(self, sockfile, display, debug_log):
         self.sockfile = sockfile
         self.display = display
+        self.log_level = logging.DEBUG if debug_log else logging.INFO
 
         self.proc = None
         self.c = None
@@ -258,10 +263,9 @@ class Qtile:
         rpipe, wpipe = multiprocessing.Pipe()
 
         def run_qtile():
-            llvl = logging.DEBUG if pytest.config.getoption("--debuglog") else logging.INFO
             kore = xcore.XCore()
             try:
-                init_log(llvl, log_path=None, log_color=False)
+                init_log(self.log_level, log_path=None, log_color=False)
                 q = QtileManager(kore, config_class(), self.display, self.sockfile)
                 q.loop()
             except Exception:
@@ -272,7 +276,9 @@ class Qtile:
 
         # First, wait for socket to appear
         if can_connect_qtile(self.sockfile):
-            self.c = libqtile.command.Client(self.sockfile)
+            ipc_client = ipc.Client(self.sockfile)
+            ipc_command = command_interface.IPCCommandInterface(ipc_client)
+            self.c = command_client.InteractiveCommandClient(ipc_command)
             return
         if rpipe.poll(sleep_time):
             error = rpipe.recv()
@@ -286,8 +292,7 @@ class Qtile:
         an error and the returned manager should not be started, otherwise this
         will likely block the thread.
         """
-        llvl = logging.DEBUG if pytest.config.getoption("--debuglog") else logging.INFO
-        init_log(llvl, log_path=None, log_color=False)
+        init_log(self.log_level, log_path=None, log_color=False)
         kore = xcore.XCore()
         config = config_class()
         for attr in dir(default_config):
@@ -459,7 +464,7 @@ def qtile(request, xephyr):
 
     with tempfile.NamedTemporaryFile() as f:
         sockfile = f.name
-        q = Qtile(sockfile, xephyr.display)
+        q = Qtile(sockfile, xephyr.display, request.config.getoption("--debuglog"))
         try:
             q.start(config)
 
@@ -472,7 +477,7 @@ def qtile(request, xephyr):
 def qtile_nospawn(request, xephyr):
     with tempfile.NamedTemporaryFile() as f:
         sockfile = f.name
-        q = Qtile(sockfile, xephyr.display)
+        q = Qtile(sockfile, xephyr.display, request.config.getoption("--debuglog"))
 
         try:
             yield q
