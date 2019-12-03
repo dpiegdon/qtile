@@ -20,19 +20,14 @@
 # SOFTWARE.
 
 import copy
-import six
 from abc import ABCMeta, abstractmethod
 
 from .. import command, configurable
 
-try:
-    from typing import Any, List, Tuple  # noqa: F401
-except ImportError:
-    pass
+from typing import Any, List, Tuple  # noqa: F401
 
 
-@six.add_metaclass(ABCMeta)
-class Layout(command.CommandObject, configurable.Configurable):
+class Layout(command.CommandObject, configurable.Configurable, metaclass=ABCMeta):
     """This class defines the API that should be exposed by all layouts"""
     @classmethod
     def _name(cls):
@@ -347,7 +342,7 @@ class Delegate(Layout):
         """
         if name.startswith('cmd_'):
             return getattr(self._get_active_layout(), name)
-        return super(Delegate, self).__getattr__(name)
+        return super().__getattr__(name)
 
     def info(self):
         d = Layout.info(self)
@@ -356,7 +351,7 @@ class Delegate(Layout):
         return d
 
 
-class _ClientList(object):
+class _ClientList:
     """
     ClientList maintains a list of clients and a current client.
 
@@ -451,7 +446,7 @@ class _ClientList(object):
             self.clients.append(client)
         self.current_client = client
 
-    def appendHead(self, client):
+    def append_head(self, client):
         """
         Append the given client in front of list.
         """
@@ -599,7 +594,7 @@ class _SimpleLayoutBase(Layout):
 
     def focus(self, client):
         self.clients.current_client = client
-        self.group.layoutAll()
+        self.group.layout_all()
 
     def focus_first(self):
         return self.clients.focus_first()

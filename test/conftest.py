@@ -20,13 +20,12 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-
-from __future__ import print_function
-
 import libqtile
 import libqtile.ipc
-from libqtile.manager import Qtile as QtileManager
+from libqtile.core.manager import Qtile as QtileManager
+from libqtile.core import xcore
 from libqtile.log_utils import init_log
+from libqtile.resources import default_config
 
 import functools
 import logging
@@ -40,8 +39,8 @@ import time
 import traceback
 
 import xcffib
+import xcffib.testing
 import xcffib.xproto
-from xvfbwrapper import Xvfb
 
 # the default sizes for the Xephyr windows
 WIDTH = 800
@@ -53,7 +52,13 @@ max_sleep = 5.0
 sleep_time = 0.1
 
 
-class retry:
+def pytest_addoption(parser):
+    parser.addoption(
+        "--debuglog", action="store_true", default=False, help="enable debug output"
+    )
+
+
+class Retry:
     def __init__(self, fail_msg='retry failed!', ignore_exceptions=(),
                  dt=sleep_time, tmax=max_sleep, return_on_fail=False):
         self.fail_msg = fail_msg
@@ -83,26 +88,20 @@ class retry:
         return wrapper
 
 
-@retry(ignore_exceptions=(xcffib.ConnectionException,), return_on_fail=True)
+@Retry(ignore_exceptions=(xcffib.ConnectionException,), return_on_fail=True)
 def can_connect_x11(disp=':0'):
     conn = xcffib.connect(display=disp)
     conn.disconnect()
     return True
 
 
-@retry(ignore_exceptions=(libqtile.ipc.IPCError,), return_on_fail=True)
+@Retry(ignore_exceptions=(libqtile.ipc.IPCError,), return_on_fail=True)
 def can_connect_qtile(socket_path):
     client = libqtile.command.Client(socket_path)
     val = client.status()
     if val == 'OK':
         return True
     return False
-
-
-def _find_display():
-    """Returns the next available display"""
-    xvfb = Xvfb()
-    return xvfb._get_next_unused_display()
 
 
 def whereis(program):
@@ -114,7 +113,7 @@ def whereis(program):
     return None
 
 
-class BareConfig(object):
+class BareConfig:
     auto_fullscreen = True
     groups = [
         libqtile.config.Group("a"),
@@ -145,7 +144,7 @@ class BareConfig(object):
     follow_mouse_focus = False
 
 
-class Xephyr(object):
+class Xephyr:
     """Spawn Xephyr instance
 
     Set-up a Xephyr instance with the given parameters.  The Xephyr instance
@@ -187,7 +186,7 @@ class Xephyr(object):
         which is used to setup the instance.
         """
         # get a new display
-        self.display = ":{}".format(_find_display())
+        self.display = ":{}".format(xcffib.testing.find_display())
 
         # build up arguments
         args = [
@@ -232,8 +231,14 @@ class Xephyr(object):
 
         self.proc = None
 
+        # clean up the lock file for the display we allocated
+        try:
+            os.remove(xcffib.testing.lock_path(int(self.display[1:])))
+        except OSError:
+            pass
 
-class Qtile(object):
+
+class Qtile:
     """Spawn a Qtile instance
 
     Setup a qtile server instance on the given display, with the given socket
@@ -253,9 +258,11 @@ class Qtile(object):
         rpipe, wpipe = multiprocessing.Pipe()
 
         def run_qtile():
+            llvl = logging.DEBUG if pytest.config.getoption("--debuglog") else logging.INFO
+            kore = xcore.XCore()
             try:
-                init_log(logging.INFO, log_path=None, log_color=False)
-                q = QtileManager(config_class(), self.display, self.sockfile)
+                init_log(llvl, log_path=None, log_color=False)
+                q = QtileManager(kore, config_class(), self.display, self.sockfile)
                 q.loop()
             except Exception:
                 wpipe.send(traceback.format_exc())
@@ -279,8 +286,15 @@ class Qtile(object):
         an error and the returned manager should not be started, otherwise this
         will likely block the thread.
         """
-        init_log(logging.INFO, log_path=None, log_color=False)
-        return QtileManager(config_class(), self.display, self.sockfile)
+        llvl = logging.DEBUG if pytest.config.getoption("--debuglog") else logging.INFO
+        init_log(llvl, log_path=None, log_color=False)
+        kore = xcore.XCore()
+        config = config_class()
+        for attr in dir(default_config):
+            if not hasattr(config, attr):
+                setattr(config, attr, getattr(default_config, attr))
+
+        return QtileManager(kore, config, self.display, self.sockfile)
 
     def terminate(self):
         if self.proc is None:
@@ -323,7 +337,7 @@ class Qtile(object):
         start = len(client.windows())
         proc = subprocess.Popen(args, env={"DISPLAY": self.display})
 
-        @retry(ignore_exceptions=(RuntimeError,))
+        @Retry(ignore_exceptions=(RuntimeError,))
         def success():
             while proc.poll() is None:
                 if len(client.windows()) > start:
@@ -356,7 +370,7 @@ class Qtile(object):
         proc.wait()
         self.testwindows.remove(proc)
 
-        @retry(ignore_exceptions=(ValueError,))
+        @Retry(ignore_exceptions=(ValueError,))
         def success():
             if len(self.c.windows()) < start:
                 return True
@@ -365,16 +379,16 @@ class Qtile(object):
         if not success():
             raise AssertionError("Window could not be killed...")
 
-    def testWindow(self, name):
+    def test_window(self, name):
         return self._spawn_script("window.py", self.display, name)
 
-    def testTkWindow(self, name, wm_type):
+    def test_tkwindow(self, name, wm_type):
         return self._spawn_script("tkwindow.py", name, wm_type)
 
-    def testDialog(self, name="dialog"):
-        return self.testTkWindow(name, "dialog")
+    def test_dialog(self, name="dialog"):
+        return self.test_tkwindow(name, "dialog")
 
-    def testNotification(self, name="notification"):
+    def test_notification(self, name="notification"):
         """
         Simulate a notification window. Note that, for testing purposes, this
         process must be killed explicitly, unlike actual notifications which
@@ -383,21 +397,21 @@ class Qtile(object):
         # Don't use a real notification, e.g. notify-send or
         # zenity --notification, since we want to keep the process on until
         # explicitly killed
-        return self.testTkWindow(name, "notification")
+        return self.test_tkwindow(name, "notification")
 
-    def testXclock(self):
+    def test_xclock(self):
         path = whereis("xclock")
         return self._spawn_window(path)
 
-    def testXeyes(self):
+    def test_xeyes(self):
         path = whereis("xeyes")
         return self._spawn_window(path)
 
-    def testGkrellm(self):
+    def test_gkrellm(self):
         path = whereis("gkrellm")
         return self._spawn_window(path)
 
-    def testXcalc(self):
+    def test_xcalc(self):
         path = whereis("xcalc")
         return self._spawn_window(path)
 
@@ -419,7 +433,7 @@ class Qtile(object):
 
 @pytest.fixture(scope="session")
 def xvfb():
-    with Xvfb():
+    with xcffib.testing.XvfbTest():
         display = os.environ["DISPLAY"]
         if not can_connect_x11(display):
             raise OSError("Xvfb did not come up")
@@ -438,6 +452,10 @@ def xephyr(request, xvfb):
 @pytest.fixture(scope="function")
 def qtile(request, xephyr):
     config = getattr(request, "param", BareConfig)
+
+    for attr in dir(default_config):
+        if not hasattr(config, attr):
+            setattr(config, attr, getattr(default_config, attr))
 
     with tempfile.NamedTemporaryFile() as f:
         sockfile = f.name

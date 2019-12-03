@@ -15,7 +15,6 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-from __future__ import division
 import cairocffi
 import cairocffi.pixbuf
 import io
@@ -79,10 +78,10 @@ def get_cairo_pattern(surface, width=None, height=None, theta=0.0):
         tr_height = surf_height / height
     matrix.scale(tr_width, tr_height)
 
-    EPSILON = 1.0e-6
-    PI = 3.141592653589793
-    if abs(theta) > EPSILON:
-        theta_rad = PI / 180.0 * theta
+    epsilon = 1.0e-6
+    pi = 3.141592653589793
+    if abs(theta) > epsilon:
+        theta_rad = pi / 180.0 * theta
         mat_rot = cairocffi.Matrix()
         # https://cairographics.org/cookbook/transform_about_point/
         xt = surf_width * tr_width * 0.5
@@ -96,7 +95,7 @@ def get_cairo_pattern(surface, width=None, height=None, theta=0.0):
     return pattern
 
 
-class _Descriptor(object):
+class _Descriptor:
     def __init__(self, name=None, default=None, **opts):
         self.name = name
         self.under_name = '_' + name
@@ -125,14 +124,14 @@ class _Descriptor(object):
 
 class _Resetter(_Descriptor):
     def __set__(self, obj, value):
-        super(_Resetter, self).__set__(obj, value)
+        super().__set__(obj, value)
         obj._reset()
 
 
 class _PixelSize(_Resetter):
     def __set__(self, obj, value):
         value = max(round(value), 1)
-        super(_PixelSize, self).__set__(obj, value)
+        super().__set__(obj, value)
 
     def get_default(self, obj):
         size = obj.default_size
@@ -142,13 +141,13 @@ class _PixelSize(_Resetter):
 class _Rotation(_Resetter):
     def __set__(self, obj, value):
         value = float(value)
-        super(_Rotation, self).__set__(obj, value)
+        super().__set__(obj, value)
 
 
 _ImgSize = namedtuple('_ImgSize', ('width', 'height'))
 
 
-class Img(object):
+class Img:
     """Img is a class which creates & manipulates cairo SurfacePatterns from an image
 
     There are two constructors Img(...) and Img.from_path(...)
@@ -337,7 +336,7 @@ def get_matching_files(dirpath='.', explicit_filetype=False, *names):
     return d_total
 
 
-class Loader(object):
+class Loader:
     """Loader - create Img() instances from image names
 
     load icons with Loader e.g.,

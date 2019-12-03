@@ -33,10 +33,7 @@
 from .log_utils import logger
 from . import utils
 
-try:
-    from typing import Dict, Set  # noqa: F401
-except ImportError:
-    pass
+from typing import Dict, Set  # noqa: F401
 
 
 subscriptions = {}  # type: Dict
@@ -53,7 +50,7 @@ def clear():
     subscriptions.clear()
 
 
-class Subscribe(object):
+class Subscribe:
     def __init__(self):
         hooks = set([])
         for i in dir(self):
@@ -368,7 +365,7 @@ def fire(event, *args, **kwargs):
     if event not in subscribe.hooks:
         raise utils.QtileError("Unknown event: %s" % event)
     if event not in SKIPLOG:
-        logger.info("Internal event: %s(%s, %s)", event, args, kwargs)
+        logger.debug("Internal event: %s(%s, %s)", event, args, kwargs)
     for i in subscriptions.get(event, []):
         try:
             i(*args, **kwargs)

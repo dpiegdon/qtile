@@ -1,16 +1,14 @@
+import os
 import pytest
-from xvfbwrapper import Xvfb
 import xcffib
-from libqtile import xcbq
+import xcffib.testing
+from libqtile.core import xcbq
 
 
 @pytest.fixture(scope='function', autouse=True)
 def xdisplay(request):
-    xvfb = Xvfb(width=1280, height=720)
-    xvfb.start()
-    display = ':{}'.format(xvfb.new_display)
-    yield display
-    xvfb.stop()
+    with xcffib.testing.XvfbTest(width=1280, height=720):
+        yield os.environ['DISPLAY']
 
 
 def test_new_window(xdisplay):
@@ -60,3 +58,8 @@ def test_masks():
     assert set(vals) == set(d.values())
     with pytest.raises(ValueError):
         mask, vals = cfgmasks(asdf=32, **d)
+
+
+def test_translate_masks():
+    assert xcbq.translate_masks(["shift", "control"])
+    assert xcbq.translate_masks([]) == 0

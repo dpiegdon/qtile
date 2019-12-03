@@ -1,7 +1,6 @@
 from . import base
 from libqtile.log_utils import logger
 
-from six import u, text_type
 from socket import error as socket_error
 from mpd import MPDClient, ConnectionError, CommandError
 
@@ -22,9 +21,9 @@ keys = {
 
 # To display mpd state
 play_states = {
-    'play': u('\u25b6'),
-    'pause': u('\u23F8'),
-    'stop': u('\u25a0'),
+    'play': '\u25b6',
+    'pause': '\u23F8',
+    'stop': '\u25a0',
 }
 
 
@@ -96,7 +95,7 @@ class Mpd2(base.ThreadPoolText):
 
     def __init__(self, status_format=default_format,
                  prepare_status=prepare_status, **config):
-        super(Mpd2, self).__init__(None, **config)
+        super().__init__(None, **config)
         self.add_defaults(Mpd2.defaults)
         self.status_format = status_format
         self.prepare_status = prepare_status
@@ -177,8 +176,8 @@ class Mpd2(base.ThreadPoolText):
         status.update(currentsong)
 
         fmt = self.status_format
-        if not isinstance(fmt, text_type):
-            fmt = u(fmt)
+        if not isinstance(fmt, str):
+            fmt = str(fmt)
 
         try:
             formatted = fmt.format(play_status=play_status, **status)
@@ -192,7 +191,7 @@ class Mpd2(base.ThreadPoolText):
             self.prepare_status[key](status, key, self.space)
 
     def finalize(self):
-        super(Mpd2, self).finalize()
+        super().finalize()
 
         try:
             self.client.close()

@@ -1,7 +1,6 @@
 import json
 
-import six
-from six.moves.urllib.request import urlopen, Request
+from urllib.request import urlopen, Request
 
 from libqtile.widget import base
 from libqtile.log_utils import logger
@@ -17,10 +16,7 @@ except ImportError:
     def xmlparse(body):
         raise Exception("no xmltodict library")
 
-try:
-    from typing import Any, List, Tuple  # noqa: F401
-except ImportError:
-    pass
+from typing import Any, List, Tuple  # noqa: F401
 
 
 class GenPollText(base.ThreadedPollText):
@@ -62,10 +58,7 @@ class GenPollUrl(base.ThreadedPollText):
             headers = {}
         req = Request(url, data, headers)
         res = urlopen(req)
-        if six.PY3:
-            charset = res.headers.get_content_charset()
-        else:
-            charset = res.headers.getparam('charset')
+        charset = res.headers.get_content_charset()
 
         body = res.read()
         if charset:

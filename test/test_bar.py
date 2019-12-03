@@ -23,17 +23,15 @@
 # SOFTWARE.
 
 import pytest
-import six
 
 import libqtile.layout
 import libqtile.bar
 import libqtile.widget
-import libqtile.manager
 import libqtile.config
 import libqtile.confreader
 
 
-class GBConfig(object):
+class GBConfig:
     auto_fullscreen = True
     keys = []
     mouse = []
@@ -116,7 +114,7 @@ def test_completion():
 
 @gb_config
 def test_draw(qtile):
-    qtile.testWindow("one")
+    qtile.test_window("one")
     b = qtile.c.bar["bottom"].info()
     assert b["widgets"][0]["name"] == "groupbox"
 
@@ -156,7 +154,7 @@ def test_textbox_errors(qtile):
     qtile.c.widget["text"].update(None)
     qtile.c.widget["text"].update("".join(chr(i) for i in range(255)))
     qtile.c.widget["text"].update("V\xE2r\xE2na\xE7\xEE")
-    qtile.c.widget["text"].update(six.u("\ua000"))
+    qtile.c.widget["text"].update("\ua000")
 
 
 @gb_config
@@ -167,7 +165,7 @@ def test_groupbox_button_press(qtile):
     assert qtile.c.groups()["a"]["screen"] == 0
 
 
-class GeomConf(object):
+class GeomConf:
     auto_fullscreen = False
     main = None
     keys = []
@@ -205,14 +203,14 @@ class DBarV(libqtile.bar.Bar):
         self.horizontal = False
 
 
-class DWidget(object):
+class DWidget:
     def __init__(self, length, length_type):
         self.length, self.length_type = length, length_type
 
 
 @geom_config
 def test_geometry(qtile):
-    qtile.testXeyes()
+    qtile.test_xeyes()
     g = qtile.c.screens()[0]["gaps"]
     assert g["top"] == (0, 0, 800, 10)
     assert g["bottom"] == (0, 590, 800, 10)
@@ -241,7 +239,7 @@ def test_resize(qtile):
     def offy(l):
         return [i.offsety for i in l]
 
-    for DBar, off in ((DBarH, offx), (DBarV, offy)):
+    for DBar, off in ((DBarH, offx), (DBarV, offy)):  # noqa: N806
         b = DBar([], 100)
 
         dwidget_list = [
@@ -301,7 +299,7 @@ class ExampleWidget(libqtile.widget.base._Widget):
         pass
 
 
-class IncompatibleWidgetConf(object):
+class IncompatibleWidgetConf:
     main = None
     keys = []
     mouse = []
@@ -330,7 +328,7 @@ def test_incompatible_widget(qtile_nospawn):
         qtile_nospawn.create_manager(config)
 
 
-class MultiStretchConf(object):
+class MultiStretchConf:
     main = None
     keys = []
     mouse = []

@@ -31,15 +31,11 @@
 
 from libqtile.log_utils import logger
 from .. import command, bar, configurable, drawer, confreader
-import six
 import subprocess
 import threading
 import warnings
 
-try:
-    from typing import Any, List, Tuple  # noqa: F401
-except ImportError:
-    pass
+from typing import Any, List, Tuple  # noqa: F401
 
 
 # Each widget class must define which bar orientation(s) it supports by setting
@@ -64,7 +60,7 @@ except ImportError:
 # +------------------------+--------------------+--------------------+
 class _Orientations(int):
     def __new__(cls, value, doc):
-        return super(_Orientations, cls).__new__(cls, value)
+        return super().__new__(cls, value)
 
     def __init__(self, value, doc):
         self.doc = doc
@@ -117,7 +113,7 @@ class _Widget(command.CommandObject, configurable.Configurable):
             self.length_type = length
             self.length = 0
         else:
-            assert isinstance(length, six.integer_types)
+            assert isinstance(length, int)
             self.length_type = bar.STATIC
             self.length = length
         self.configured = False
@@ -216,7 +212,7 @@ class _Widget(command.CommandObject, configurable.Configurable):
         """
             Utility function for quick retrieval of a widget by name.
         """
-        w = q.widgetMap.get(name)
+        w = q.widgets_map.get(name)
         if not w:
             raise command.CommandError("No such widget: %s" % name)
         return w
@@ -267,8 +263,7 @@ class _Widget(command.CommandObject, configurable.Configurable):
             Python 3.
         """
         output = subprocess.check_output(command, **kwargs)
-        if six.PY3:
-            output = output.decode()
+        output = output.decode()
         return output
 
     def _wrapper(self, method, *method_args):
@@ -311,7 +306,7 @@ class _TextBox(_Widget):
 
     @text.setter
     def text(self, value):
-        assert value is None or isinstance(value, six.string_types)
+        assert value is None or isinstance(value, str)
         self._text = value
         if self.layout:
             self.layout.text = value
@@ -420,8 +415,8 @@ class InLoopPollText(_TextBox):
             "widget updates whenever the event loop is idle."),
     ]  # type: List[Tuple[str, Any, str]]
 
-    def __init__(self, **config):
-        _TextBox.__init__(self, 'N/A', width=bar.CALCULATED, **config)
+    def __init__(self, default_text="N/A", width=bar.CALCULATED, **config):
+        _TextBox.__init__(self, default_text, width, **config)
         self.add_defaults(InLoopPollText.defaults)
 
     def timer_setup(self):
@@ -468,9 +463,6 @@ class InLoopPollText(_TextBox):
 class ThreadedPollText(InLoopPollText):
     """ A common interface for polling some REST URL, munging the data, and
     rendering the result in a text box. """
-    def __init__(self, **config):
-        InLoopPollText.__init__(self, **config)
-
     def tick(self):
         def worker():
             try:
@@ -502,8 +494,7 @@ class ThreadPoolText(_TextBox):
     ]  # type: List[Tuple[str, Any, str]]
 
     def __init__(self, text, **config):
-        super(ThreadPoolText, self).__init__(text, width=bar.CALCULATED,
-                                             **config)
+        super().__init__(text, width=bar.CALCULATED, **config)
         self.add_defaults(ThreadPoolText.defaults)
 
     def timer_setup(self):
@@ -549,7 +540,7 @@ class ThreadPoolText(_TextBox):
 # these two classes below look SUSPICIOUSLY similar
 
 
-class PaddingMixin(object):
+class PaddingMixin:
     """Mixin that provides padding(_x|_y|)
 
     To use it, subclass and add this to __init__:
@@ -567,7 +558,7 @@ class PaddingMixin(object):
     padding_y = configurable.ExtraFallback('padding_y', 'padding')
 
 
-class MarginMixin(object):
+class MarginMixin:
     """Mixin that provides margin(_x|_y|)
 
     To use it, subclass and add this to __init__:

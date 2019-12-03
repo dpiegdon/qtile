@@ -23,8 +23,6 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-
-from __future__ import division
 import re
 
 import cairocffi
@@ -202,7 +200,7 @@ class TaskList(base._Widget, base.PaddingMixin, base.MarginMixin):
         elif window.floating:
             state = self.txt_floating
             markup_str = self.markup_floating
-        elif window is window.group.currentWindow:
+        elif window is window.group.current_window:
             markup_str = self.markup_focused
 
         window_name = window.name if window and window.name else "?"
@@ -366,7 +364,7 @@ class TaskList(base._Widget, base.PaddingMixin, base.MarginMixin):
 
     def button_press(self, x, y, button):
         window = None
-        current_win = self.bar.screen.group.currentWindow
+        current_win = self.bar.screen.group.current_window
 
         # TODO: support scroll
         if button == 1:
@@ -438,7 +436,7 @@ class TaskList(base._Widget, base.PaddingMixin, base.MarginMixin):
             if w.urgent:
                 border = self.urgent_border
                 text_color = border
-            elif w is w.group.currentWindow:
+            elif w is w.group.current_window:
                 border = self.border
                 text_color = border
             else:

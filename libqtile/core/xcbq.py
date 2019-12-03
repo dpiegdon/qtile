@@ -34,10 +34,11 @@
     A minimal EWMH-aware OO layer over xpyb. This is NOT intended to be
     complete - it only implements the subset of functionalty needed by qtile.
 """
-from __future__ import print_function, division
-import six
 from collections import OrderedDict
 from itertools import repeat, chain
+import operator
+import functools
+import typing
 
 from xcffib.xproto import CW, WindowClass, EventMask
 from xcffib.xfixes import SelectionEventMask
@@ -47,11 +48,15 @@ import xcffib.randr
 import xcffib.xinerama
 import xcffib.xproto
 
-from . import xkeysyms
-from .log_utils import logger
+from .. import xkeysyms
+from ..log_utils import logger
 from .xcursors import Cursors
 
 keysyms = xkeysyms.keysyms
+
+
+class XCBQError(Exception):
+    pass
 
 
 def rdict(d):
@@ -186,7 +191,6 @@ SUPPORTED_ATOMS = [
     '_NET_CLIENT_LIST_STACKING',
     '_NET_CURRENT_DESKTOP',
     '_NET_ACTIVE_WINDOW',
-    # '_NET_WORKAREA',
     '_NET_SUPPORTING_WM_CHECK',
     # From http://standards.freedesktop.org/wm-spec/latest/ar01s05.html
     '_NET_WM_NAME',
@@ -201,7 +205,6 @@ SUPPORTED_ATOMS = [
 ]
 SUPPORTED_ATOMS.extend(WindowTypes.keys())
 SUPPORTED_ATOMS.extend(net_wm_states)
-# SUPPORTED_ATOMS.extend(key for key in WindowStates.keys() if key)
 
 XCB_CONN_ERRORS = {
     1: 'XCB_CONN_ERROR',
@@ -214,7 +217,7 @@ XCB_CONN_ERRORS = {
 }
 
 
-class MaskMap(object):
+class MaskMap:
     """
         A general utility class that encapsulates the way the mask/value idiom
         works in xpyb. It understands a special attribute _maskvalue on
@@ -252,7 +255,7 @@ ConfigureMasks = MaskMap(xcffib.xproto.ConfigWindow)
 AttributeMasks = MaskMap(CW)
 
 
-class AtomCache(object):
+class AtomCache:
     def __init__(self, conn):
         self.conn = conn
         self.atoms = {}
@@ -288,7 +291,7 @@ class AtomCache(object):
         return self.atoms[key]
 
 
-class _Wrapper(object):
+class _Wrapper:
     def __init__(self, wrapped):
         self.wrapped = wrapped
 
@@ -306,7 +309,7 @@ class Screen(_Wrapper):
         self.root = Window(conn, self.root)
 
 
-class PseudoScreen(object):
+class PseudoScreen:
     """
         This may be a Xinerama screen or a RandR CRTC, both of which are
         rectangular sections of an actual Screen.
@@ -319,7 +322,7 @@ class PseudoScreen(object):
         self.height = height
 
 
-class Colormap(object):
+class Colormap:
     def __init__(self, conn, cid):
         self.conn = conn
         self.cid = cid
@@ -342,7 +345,7 @@ class Colormap(object):
             return self.conn.conn.core.AllocColor(self.cid, r, g, b).reply()
 
 
-class Xinerama(object):
+class Xinerama:
     def __init__(self, conn):
         self.ext = conn.conn(xcffib.xinerama.key)
 
@@ -351,7 +354,7 @@ class Xinerama(object):
         return r.screen_info
 
 
-class RandR(object):
+class RandR:
     def __init__(self, conn):
         self.ext = conn.conn(xcffib.randr.key)
         self.ext.SelectInput(
@@ -373,7 +376,7 @@ class RandR(object):
         return crtc_list
 
 
-class XFixes(object):
+class XFixes:
     selection_mask = SelectionEventMask.SetSelectionOwner | \
         SelectionEventMask.SelectionClientClose | \
         SelectionEventMask.SelectionWindowDestroy
@@ -385,13 +388,13 @@ class XFixes(object):
                               xcffib.xfixes.MINOR_VERSION)
 
     def select_selection_input(self, window, selection="PRIMARY"):
-        SELECTION = self.conn.atoms[selection]
+        _selection = self.conn.atoms[selection]
         self.conn.xfixes.ext.SelectSelectionInput(window.wid,
-                                                  SELECTION,
+                                                  _selection,
                                                   self.selection_mask)
 
 
-class NetWmState(object):
+class NetWmState:
     """NetWmState is a descriptor for _NET_WM_STATE_* properties"""
     def __init__(self, prop_name):
         self.prop_name = prop_name
@@ -434,16 +437,16 @@ def _add_net_wm_state(cls):
 
 
 @_add_net_wm_state
-class Window(object):
+class Window:
     def __init__(self, conn, wid):
         self.conn = conn
         self.wid = wid
 
-    def _propertyString(self, r):
+    def _property_string(self, r):
         """Extract a string from a window property reply message"""
         return r.value.to_string()
 
-    def _propertyUTF8(self, r):
+    def _property_utf8(self, r):
         return r.value.to_utf8()
 
     def send_event(self, synthevent, mask=EventMask.NoEvent):
@@ -478,22 +481,22 @@ class Window(object):
         """
         r = self.get_property("_NET_WM_VISIBLE_NAME", "UTF8_STRING")
         if r:
-            return self._propertyUTF8(r)
+            return self._property_utf8(r)
 
         r = self.get_property("_NET_WM_NAME", "UTF8_STRING")
         if r:
-            return self._propertyUTF8(r)
+            return self._property_utf8(r)
 
         r = self.get_property(xcffib.xproto.Atom.WM_NAME, "UTF8_STRING")
         if r:
-            return self._propertyUTF8(r)
+            return self._property_utf8(r)
 
         r = self.get_property(
             xcffib.xproto.Atom.WM_NAME,
             xcffib.xproto.GetPropertyType.Any
         )
         if r:
-            return self._propertyString(r)
+            return self._property_string(r)
 
     def get_wm_hints(self):
         wm_hints = self.get_property("WM_HINTS", xcffib.xproto.GetPropertyType.Any)
@@ -548,14 +551,14 @@ class Window(object):
         """Return an (instance, class) tuple if WM_CLASS exists, or None"""
         r = self.get_property("WM_CLASS", "STRING")
         if r:
-            s = self._propertyString(r)
+            s = self._property_string(r)
             return tuple(s.strip("\0").split("\0"))
         return tuple()
 
     def get_wm_window_role(self):
         r = self.get_property("WM_WINDOW_ROLE", "STRING")
         if r:
-            return self._propertyString(r)
+            return self._property_string(r)
 
     def get_wm_transient_for(self):
         r = self.get_property("WM_TRANSIENT_FOR", "WINDOW", unpack=int)
@@ -566,16 +569,16 @@ class Window(object):
     def get_wm_icon_name(self):
         r = self.get_property("_NET_WM_ICON_NAME", "UTF8_STRING")
         if r:
-            return self._propertyUTF8(r)
+            return self._property_utf8(r)
 
         r = self.get_property("WM_ICON_NAME", "STRING")
         if r:
-            return self._propertyUTF8(r)
+            return self._property_utf8(r)
 
     def get_wm_client_machine(self):
         r = self.get_property("WM_CLIENT_MACHINE", "STRING")
         if r:
-            return self._propertyUTF8(r)
+            return self._property_utf8(r)
 
     def get_geometry(self):
         q = self.conn.conn.core.GetGeometry(self.wid)
@@ -626,8 +629,8 @@ class Window(object):
         )
 
     def set_cursor(self, name):
-        cursorId = self.conn.cursors[name]
-        mask, values = AttributeMasks(cursor=cursorId)
+        cursor_id = self.conn.cursors[name]
+        mask, values = AttributeMasks(cursor=cursor_id)
         self.conn.conn.core.ChangeWindowAttributesChecked(
             self.wid, mask, values
         )
@@ -653,15 +656,9 @@ class Window(object):
                 )
 
         try:
-            if isinstance(value, six.string_types):
+            if isinstance(value, str):
                 # xcffib will pack the bytes, but we should encode them properly
-                if six.PY3:
-                    value = value.encode()
-                elif not isinstance(value, str):
-                    # This will only run for Python 2 unicode strings, can't
-                    # use 'isinstance(value, unicode)' because Py 3 does not
-                    # have unicode and pyflakes complains
-                    value = value.encode('utf-8')
+                value = value.encode()
             else:
                 # if this runs without error, the value is already a list, don't wrap it
                 next(iter(value))
@@ -706,10 +703,10 @@ class Window(object):
             r = self.conn.conn.core.GetProperty(
                 False, self.wid,
                 self.conn.atoms[prop]
-                if isinstance(prop, six.string_types)
+                if isinstance(prop, str)
                 else prop,
                 self.conn.atoms[type]
-                if isinstance(type, six.string_types)
+                if isinstance(type, str)
                 else type,
                 0, (2 ** 32) - 1
             ).reply()
@@ -742,7 +739,7 @@ class Window(object):
         self.conn.conn.core.MapWindow(self.wid)
 
     def unmap(self):
-        self.conn.conn.core.UnmapWindowChecked(self.wid).check()
+        self.conn.conn.core.UnmapWindowUnchecked(self.wid)
 
     def get_attributes(self):
         return self.conn.conn.core.GetWindowAttributes(self.wid).reply()
@@ -815,7 +812,7 @@ class Window(object):
         return root, parent, [Window(self.conn, i) for i in q.children]
 
 
-class Font(object):
+class Font:
     def __init__(self, conn, fid):
         self.conn = conn
         self.fid = fid
@@ -830,7 +827,7 @@ class Font(object):
         return x
 
 
-class Connection(object):
+class Connection:
     _extmap = {
         "xinerama": Xinerama,
         "randr": RandR,
@@ -974,3 +971,35 @@ class Connection(object):
             i.name.to_string().lower()
             for i in self.conn.core.ListExtensions().reply().names
         )
+
+
+def get_keysym(key: str) -> int:
+    keysym = keysyms.get(key)
+    if not keysym:
+        raise XCBQError("Unknown key: %s" % key)
+    return keysym
+
+
+def translate_modifiers(mask: int) -> typing.List[str]:
+    r = []
+    for k, v in ModMasks.items():
+        if mask & v:
+            r.append(k)
+    return r
+
+
+def translate_masks(modifiers: typing.List[str]) -> int:
+    """
+    Translate a modifier mask specified as a list of strings into an or-ed
+    bit representation.
+    """
+    masks = []
+    for i in modifiers:
+        try:
+            masks.append(ModMasks[i])
+        except KeyError as e:
+            raise XCBQError("Unknown modifier: %s" % i) from e
+    if masks:
+        return functools.reduce(operator.or_, masks)
+    else:
+        return 0

@@ -18,13 +18,10 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-try:
-    from typing import Dict  # noqa: F401
-except ImportError:
-    pass
+from typing import Dict  # noqa: F401
 
 
-class Configurable(object):
+class Configurable:
     global_defaults = {}  # type: Dict
 
     def __init__(self, **config):
@@ -61,7 +58,7 @@ class Configurable(object):
             return (False, None)
 
 
-class ExtraFallback(object):
+class ExtraFallback:
     """Adds another layer of fallback to attributes
 
     Used to look up a different attribute name

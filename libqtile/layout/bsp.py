@@ -15,9 +15,6 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-
-from __future__ import division
-
 from .base import Layout
 
 
@@ -205,7 +202,7 @@ class Bsp(Layout):
         self.root.calc_geom(screen.x, screen.y, screen.width,
                             screen.height)
         node = self.get_node(client)
-        color = self.group.qtile.colorPixel(
+        color = self.group.qtile.color_pixel(
             self.border_focus if client.has_focus else self.border_normal)
         border = 0 if node is self.root else self.border_width
         client.place(
@@ -221,7 +218,7 @@ class Bsp(Layout):
     def cmd_toggle_split(self):
         if self.current.parent:
             self.current.parent.split_horizontal = not self.current.parent.split_horizontal
-        self.group.layoutAll()
+        self.group.layout_all()
 
     def focus_first(self):
         return next(self.root.clients(), None)
@@ -343,7 +340,7 @@ class Bsp(Layout):
         if node:
             node.client, self.current.client = self.current.client, node.client
             self.current = node
-            self.group.layoutAll()
+            self.group.layout_all()
         elif self.current is not self.root:
             node = self.current
             self.remove(node.client)
@@ -354,14 +351,14 @@ class Bsp(Layout):
             node.parent = newroot
             self.root = newroot
             self.current = node
-            self.group.layoutAll()
+            self.group.layout_all()
 
     def cmd_shuffle_right(self):
         node = self.find_right()
         if node:
             node.client, self.current.client = self.current.client, node.client
             self.current = node
-            self.group.layoutAll()
+            self.group.layout_all()
         elif self.current is not self.root:
             node = self.current
             self.remove(node.client)
@@ -372,14 +369,14 @@ class Bsp(Layout):
             node.parent = newroot
             self.root = newroot
             self.current = node
-            self.group.layoutAll()
+            self.group.layout_all()
 
     def cmd_shuffle_up(self):
         node = self.find_up()
         if node:
             node.client, self.current.client = self.current.client, node.client
             self.current = node
-            self.group.layoutAll()
+            self.group.layout_all()
         elif self.current is not self.root:
             node = self.current
             self.remove(node.client)
@@ -390,14 +387,14 @@ class Bsp(Layout):
             node.parent = newroot
             self.root = newroot
             self.current = node
-            self.group.layoutAll()
+            self.group.layout_all()
 
     def cmd_shuffle_down(self):
         node = self.find_down()
         if node:
             node.client, self.current.client = self.current.client, node.client
             self.current = node
-            self.group.layoutAll()
+            self.group.layout_all()
         elif self.current is not self.root:
             node = self.current
             self.remove(node.client)
@@ -408,7 +405,7 @@ class Bsp(Layout):
             node.parent = newroot
             self.root = newroot
             self.current = node
-            self.group.layoutAll()
+            self.group.layout_all()
 
     def cmd_grow_left(self):
         child = self.current
@@ -417,7 +414,7 @@ class Bsp(Layout):
             if parent.split_horizontal and child is parent.children[1]:
                 parent.split_ratio = max(5,
                                          parent.split_ratio - self.grow_amount)
-                self.group.layoutAll()
+                self.group.layout_all()
                 break
             child = parent
             parent = child.parent
@@ -429,7 +426,7 @@ class Bsp(Layout):
             if parent.split_horizontal and child is parent.children[0]:
                 parent.split_ratio = min(95,
                                          parent.split_ratio + self.grow_amount)
-                self.group.layoutAll()
+                self.group.layout_all()
                 break
             child = parent
             parent = child.parent
@@ -441,7 +438,7 @@ class Bsp(Layout):
             if not parent.split_horizontal and child is parent.children[1]:
                 parent.split_ratio = max(5,
                                          parent.split_ratio - self.grow_amount)
-                self.group.layoutAll()
+                self.group.layout_all()
                 break
             child = parent
             parent = child.parent
@@ -453,7 +450,7 @@ class Bsp(Layout):
             if not parent.split_horizontal and child is parent.children[0]:
                 parent.split_ratio = min(95,
                                          parent.split_ratio + self.grow_amount)
-                self.group.layoutAll()
+                self.group.layout_all()
                 break
             child = parent
             parent = child.parent
@@ -464,7 +461,7 @@ class Bsp(Layout):
         while parent:
             if parent.split_horizontal and child is parent.children[1]:
                 parent.children = parent.children[::-1]
-                self.group.layoutAll()
+                self.group.layout_all()
                 break
             child = parent
             parent = child.parent
@@ -475,7 +472,7 @@ class Bsp(Layout):
         while parent:
             if parent.split_horizontal and child is parent.children[0]:
                 parent.children = parent.children[::-1]
-                self.group.layoutAll()
+                self.group.layout_all()
                 break
             child = parent
             parent = child.parent
@@ -486,7 +483,7 @@ class Bsp(Layout):
         while parent:
             if not parent.split_horizontal and child is parent.children[1]:
                 parent.children = parent.children[::-1]
-                self.group.layoutAll()
+                self.group.layout_all()
                 break
             child = parent
             parent = child.parent
@@ -497,7 +494,7 @@ class Bsp(Layout):
         while parent:
             if not parent.split_horizontal and child is parent.children[0]:
                 parent.children = parent.children[::-1]
-                self.group.layoutAll()
+                self.group.layout_all()
                 break
             child = parent
             parent = child.parent
@@ -510,4 +507,4 @@ class Bsp(Layout):
                 distribute = False
         if distribute:
             self.root.distribute()
-        self.group.layoutAll()
+        self.group.layout_all()

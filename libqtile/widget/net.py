@@ -17,11 +17,12 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-
-from __future__ import division
+import psutil
 
 from libqtile.log_utils import logger
 from . import base
+
+from typing import List  # noqa: F401
 
 
 class Net(base.ThreadedPollText):
@@ -55,16 +56,15 @@ class Net(base.ThreadedPollText):
         return b, letter
 
     def get_stats(self):
-        lines = []  # type: List[str]
-        with open('/proc/net/dev', 'r') as f:
-            lines = f.readlines()[2:]
+
         interfaces = {}
-        for s in lines:
-            int_s = s.split()
-            name = int_s[0][:-1]
-            down = float(int_s[1])
-            up = float(int_s[-8])
+        net = psutil.net_io_counters(pernic=True)
+        for iface in net:
+            name = iface
+            down = net[iface].bytes_recv
+            up = net[iface].bytes_sent
             interfaces[name] = {'down': down, 'up': up}
+
         return interfaces
 
     def _format(self, down, up):
@@ -94,7 +94,7 @@ class Net(base.ThreadedPollText):
 
             down, up = self._format(down, up)
 
-            str_base = u"%s%s \u2193\u2191 %s%s"
+            str_base = "%s%s \u2193\u2191 %s%s"
 
             self.interfaces = new_int
             return str_base % (down, down_letter, up, up_letter)
