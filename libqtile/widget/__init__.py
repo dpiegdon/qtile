@@ -29,22 +29,33 @@ from .clock import Clock  # noqa: F401
 from .currentlayout import CurrentLayout, CurrentLayoutIcon  # noqa: F401
 from .groupbox import AGroupBox, GroupBox  # noqa: F401
 from .prompt import Prompt  # noqa: F401
+from .quick_exit import QuickExit  # noqa: F401
 from .systray import Systray  # noqa: F401
 from .textbox import TextBox  # noqa: F401
 from .windowname import WindowName  # noqa: F401
 
 
 def safe_import(module_name, class_name):
-    safe_import_((".widget", module_name), class_name, globals(),
-                 fallback=make_error)
+    safe_import_(
+        (".widget", module_name), class_name, globals(), fallback=make_error
+    )
 
 
 safe_import("backlight", "Backlight")
 safe_import("battery", ["Battery", "BatteryIcon"])
 safe_import("currentscreen", "CurrentScreen")
 safe_import("debuginfo", "DebugInfo")
-safe_import("graph", ["CPUGraph", "MemoryGraph", "SwapGraph", "NetGraph",
-                      "HDDGraph", "HDDBusyGraph"])
+safe_import(
+    "graph",
+    [
+        "CPUGraph",
+        "MemoryGraph",
+        "SwapGraph",
+        "NetGraph",
+        "HDDGraph",
+        "HDDBusyGraph",
+    ],
+)
 safe_import("maildir", "Maildir")
 safe_import("notify", "Notify")
 safe_import("sensors", "ThermalSensor")
@@ -80,7 +91,9 @@ safe_import("wallpaper", "Wallpaper")
 safe_import("check_updates", "CheckUpdates")
 safe_import("moc", "Moc")
 safe_import("memory", "Memory")
+safe_import("cpu", "CPU")
 safe_import("idlerpg", "IdleRPG")
 safe_import("pomodoro", "Pomodoro")
 safe_import("stock_ticker", "StockTicker")
 safe_import("caps_num_lock_indicator", "CapsNumLockIndicator")
+safe_import("quick_exit", "QuickExit")

@@ -37,8 +37,8 @@ import xcffib.testing
 import xcffib.xproto
 
 import libqtile.config
-from libqtile.core.manager import Qtile as QtileManager
-from libqtile.core import xcore
+from libqtile.backend.x11 import xcore
+from libqtile.core.session_manager import SessionManager
 from libqtile.log_utils import init_log
 from libqtile.resources import default_config
 from libqtile import command_client, command_interface, ipc
@@ -263,10 +263,10 @@ class Qtile:
         rpipe, wpipe = multiprocessing.Pipe()
 
         def run_qtile():
-            kore = xcore.XCore()
             try:
+                kore = xcore.XCore(display_name=self.display)
                 init_log(self.log_level, log_path=None, log_color=False)
-                q = QtileManager(kore, config_class(), self.display, self.sockfile)
+                q = SessionManager(kore, config_class(), fname=self.sockfile)
                 q.loop()
             except Exception:
                 wpipe.send(traceback.format_exc())
@@ -293,13 +293,13 @@ class Qtile:
         will likely block the thread.
         """
         init_log(self.log_level, log_path=None, log_color=False)
-        kore = xcore.XCore()
+        kore = xcore.XCore(display_name=self.display)
         config = config_class()
         for attr in dir(default_config):
             if not hasattr(config, attr):
                 setattr(config, attr, getattr(default_config, attr))
 
-        return QtileManager(kore, config, self.display, self.sockfile)
+        return SessionManager(kore, config, fname=self.sockfile)
 
     def terminate(self):
         if self.proc is None:

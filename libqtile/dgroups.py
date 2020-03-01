@@ -41,7 +41,7 @@ def simple_key_binder(mod, keynames=None):
     def func(dgroup):
         # unbind all
         for key in dgroup.keys[:]:
-            dgroup.qtile.unmap_key(key)
+            dgroup.qtile.ungrab_key(key)
             dgroup.keys.remove(key)
 
         if keynames:
@@ -63,9 +63,9 @@ def simple_key_binder(mod, keynames=None):
             dgroup.keys.append(key)
             dgroup.keys.append(key_s)
             dgroup.keys.append(key_c)
-            dgroup.qtile.map_key(key)
-            dgroup.qtile.map_key(key_s)
-            dgroup.qtile.map_key(key_c)
+            dgroup.qtile.grab_key(key)
+            dgroup.qtile.grab_key(key_s)
+            dgroup.qtile.grab_key(key_c)
 
     return func
 
@@ -248,7 +248,7 @@ class DGroups:
             del self.timeout[client]
 
         # Wait the delay until really delete the group
-        logger.info('Add dgroup timer')
+        logger.info('Add dgroup timer with delay {}s'.format(self.delay))
         self.timeout[client] = self.qtile.call_later(
             self.delay, delete_client
         )

@@ -47,14 +47,14 @@ class Key:
     commands:
         A list of lazy command objects generated with the lazy.lazy helper.
         If multiple Call objects are specified, they are run in sequence.
-    kwds:
+    kwargs:
         A dictionary containing "desc", allowing a description to be added
     """
-    def __init__(self, modifiers, key, *commands, **kwds):
+    def __init__(self, modifiers, key, *commands, **kwargs):
         self.modifiers = modifiers
         self.key = key
         self.commands = commands
-        self.desc = kwds.get("desc", "")
+        self.desc = kwargs.get("desc", "")
 
     def __repr__(self):
         return "<Key (%s, %s)>" % (self.modifiers, self.key)
@@ -80,6 +80,10 @@ class Drag(Mouse):
     It focuses clicked window by default.  If you want to prevent it pass,
     `focus=None` as an argument
     """
+    def __init__(self, *args, start=False, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.start = start
+
     def __repr__(self):
         return "<Drag (%s, %s)>" % (self.modifiers, self.button)
 
@@ -148,9 +152,9 @@ class EzConfig:
 
 
 class EzKey(EzConfig, Key):
-    def __init__(self, keydef, *commands):
+    def __init__(self, keydef, *commands, **kwargs):
         modkeys, key = self.parse(keydef)
-        super().__init__(modkeys, key, *commands)
+        super().__init__(modkeys, key, *commands, **kwargs)
 
 
 class EzClick(EzConfig, Click):
@@ -289,14 +293,14 @@ class Screen(CommandObject):
 
     def set_group(self, new_group, save_prev=True):
         """Put group on this screen"""
+        if new_group is None:
+            return
+
         if new_group.screen == self:
             return
 
         if save_prev:
             self.previous_group = self.group
-
-        if new_group is None:
-            return
 
         if new_group.screen:
             # g1 <-> s1 (self)
@@ -330,6 +334,12 @@ class Screen(CommandObject):
             self.group.layouts[self.group.current_layout],
             self.group
         )
+
+    def toggle_group(self, group=None):
+        """Switch to the selected group or to the previously active one"""
+        if group in (self.group, None):
+            group = self.previous_group
+        self.set_group(group)
 
     def _items(self, name):
         if name == "layout":
@@ -399,9 +409,7 @@ class Screen(CommandObject):
     def cmd_toggle_group(self, group_name=None):
         """Switch to the selected group or to the previously active one"""
         group = self.qtile.groups_map.get(group_name)
-        if group in (self.group, None):
-            group = self.previous_group
-        self.set_group(group)
+        self.toggle_group(group)
 
     def cmd_togglegroup(self, groupName=None):  # noqa
         """Switch to the selected group or to the previously active one

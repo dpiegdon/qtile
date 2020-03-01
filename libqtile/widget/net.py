@@ -22,16 +22,20 @@ import psutil
 from libqtile.log_utils import logger
 from libqtile.widget import base
 
-from typing import List  # noqa: F401
+from typing import Tuple
+from math import log
 
 
 class Net(base.ThreadedPollText):
     """Displays interface down and up speed"""
     orientations = base.ORIENTATION_HORIZONTAL
     defaults = [
+        ('format', '{interface}: {down} \u2193\u2191 {up}',
+         'Display format of down-/upload speed of given interfaces'),
         ('interface', None, 'List of interfaces or single NIC as string to monitor, \
             None to displays all active NICs combined'),
         ('update_interval', 1, 'The update interval.'),
+        ('use_bits', False, 'Use bits instead of bytes per second?'),
     ]
 
     def __init__(self, **config):
@@ -46,19 +50,26 @@ class Net(base.ThreadedPollText):
                 raise AttributeError("Invalid Argument passed: %s\nAllowed Types: List, String, None" % self.interface)
         self.stats = self.get_stats()
 
-    def convert_b(self, b):
-
-        letters = ["kB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"]
+    def convert_b(self, num_bytes: float) -> Tuple[float, str]:
+        """Converts the number of bytes to the correct unit"""
         factor = 1000.0
-        unit = "B"
 
-        for letter in letters:
-            if b > factor:
-                b /= factor
-                unit = letter
-            else:
-                break
-        return b, unit
+        if self.use_bits:
+            letters = ["b", "kb", "Mb", "Gb", "Tb", "Pb", "Eb", "Zb", "Yb"]
+            num_bytes *= 8
+        else:
+            letters = ["B", "kB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"]
+
+        if num_bytes > 0:
+            power = int(log(num_bytes) / log(factor))
+            power = max(min(power, len(letters) - 1), 0)
+        else:
+            power = 0
+
+        converted_bytes = num_bytes / factor**power
+        unit = letters[power]
+
+        return converted_bytes, unit
 
     def get_stats(self):
         interfaces = {}
@@ -74,17 +85,12 @@ class Net(base.ThreadedPollText):
                 interfaces[iface] = {'down': down, 'up': up}
             return interfaces
 
-    def _format(self, down, up):
-        down = "%0.2f" % down
-        up = "%0.2f" % up
-        if len(down) > 5:
-            down = down[:5]
-        if len(up) > 5:
-            up = up[:5]
-
-        down = " " * (5 - len(down)) + down
-        up = " " * (5 - len(up)) + up
-        return down, up
+    def _format(self, down, down_letter, up, up_letter):
+        max_len_down = 7 - len(down_letter)
+        max_len_up = 7 - len(up_letter)
+        down = '{val:{max_len}.2f}'.format(val=down, max_len=max_len_down)
+        up = '{val:{max_len}.2f}'.format(val=up, max_len=max_len_up)
+        return down[:max_len_down], up[:max_len_up]
 
     def poll(self):
         ret_stat = []
@@ -100,10 +106,15 @@ class Net(base.ThreadedPollText):
                 up = up / self.update_interval
                 down, down_letter = self.convert_b(down)
                 up, up_letter = self.convert_b(up)
-                down, up = self._format(down, up)
-                str_base = "%s: %s%s \u2193\u2191 %s%s"
+                down, up = self._format(down, down_letter, up, up_letter)
                 self.stats[intf] = new_stats[intf]
-                ret_stat.append(str_base % (intf, down, down_letter, up, up_letter))
+                ret_stat.append(
+                    self.format.format(
+                        **{
+                            'interface': intf,
+                            'down': down + down_letter,
+                            'up': up + up_letter
+                        }))
 
             return " ".join(ret_stat)
         except Exception as excp:

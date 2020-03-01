@@ -19,7 +19,6 @@
 # SOFTWARE.
 
 from libqtile.dgroups import DGroups
-from xcffib.xproto import EventMask, WindowError, AccessError, DrawableError
 import asyncio
 import functools
 import io
@@ -30,11 +29,13 @@ import shlex
 import signal
 import sys
 import traceback
+import time
+import warnings
+from typing import Optional
+
 import xcffib
 import xcffib.xinerama
 import xcffib.xproto
-import time
-import warnings
 
 from ..config import Drag, Click, Screen, Match, Rule
 from ..config import ScratchPad as ScratchPadConfig
@@ -42,18 +43,17 @@ from ..group import _Group
 from ..scratchpad import ScratchPad
 from ..log_utils import logger
 from ..state import QtileState
-from ..utils import QtileError, get_cache_dir
+from ..utils import get_cache_dir
 from ..widget.base import _Widget
 from ..extension.base import _Extension
 from .. import hook
 from .. import utils
 from .. import window
-from . import xcbq
+from libqtile.backend.x11 import xcbq
 from libqtile import command_interface
 from libqtile.command_client import InteractiveCommandClient
 from libqtile.command_interface import QtileCommandInterface, IPCCommandServer
 from libqtile.command_object import CommandObject, CommandError, CommandException
-from libqtile.ipc import find_sockfile
 from libqtile.lazy import lazy
 
 
@@ -75,34 +75,17 @@ class Qtile(CommandObject):
         self,
         kore,
         config,
-        display_name=None,
-        fname=None,
+        eventloop,
         no_spawn=False,
         state=None
     ):
         self._restart = False
         self.no_spawn = no_spawn
 
-        self._eventloop = None
-        self._finalize = False
         self.mouse_position = (0, 0)
 
-        if not display_name:
-            display_name = os.environ.get("DISPLAY")
-            if not display_name:
-                raise QtileError("No DISPLAY set.")
-
-        if not fname:
-            # Dots might appear in the host part of the display name
-            # during remote X sessions. Let's strip the host part first.
-            display_number = display_name.partition(":")[2]
-            if "." not in display_number:
-                display_name += ".0"
-            fname = find_sockfile(display_name)
-
-        self.conn = xcbq.Connection(display_name)
+        self.core = kore
         self.config = config
-        self.fname = fname
         hook.init(self)
 
         self.windows_map = {}
@@ -111,45 +94,7 @@ class Qtile(CommandObject):
         self.groups = []
         self.keys_map = {}
 
-        # Find the modifier mask for the numlock key, if there is one:
-        nc = self.conn.keysym_to_keycode(xcbq.keysyms["Num_Lock"])
-        self.numlock_mask = xcbq.ModMasks.get(self.conn.get_modifier(nc), 0)
-        self.valid_mask = ~(self.numlock_mask | xcbq.ModMasks["lock"])
-
-        # Because we only do Xinerama multi-screening,
-        # we can assume that the first
-        # screen's root is _the_ root.
-        self.root = self.conn.default_screen.root
-        self.root.set_attribute(
-            eventmask=(
-                EventMask.StructureNotify |
-                EventMask.SubstructureNotify |
-                EventMask.SubstructureRedirect |
-                EventMask.EnterWindow |
-                EventMask.LeaveWindow
-            )
-        )
-
-        self.root.set_property(
-            '_NET_SUPPORTED',
-            [self.conn.atoms[x] for x in xcbq.SUPPORTED_ATOMS]
-        )
-
-        self.supporting_wm_check_window = self.conn.create_window(-1, -1, 1, 1)
-        self.root.set_property(
-            '_NET_SUPPORTING_WM_CHECK',
-            self.supporting_wm_check_window.wid
-        )
-
-        # setup the default cursor
-        self.root.set_cursor('left_ptr')
-
-        wmname = getattr(self.config, "wmname", "qtile")
-        self.supporting_wm_check_window.set_property('_NET_WM_NAME', wmname)
-        self.supporting_wm_check_window.set_property(
-            '_NET_SUPPORTING_WM_CHECK',
-            self.supporting_wm_check_window.wid
-        )
+        self.numlock_mask, self.valid_mask = self.core.masks
 
         if config.main:
             config.main(self)
@@ -185,8 +130,9 @@ class Qtile(CommandObject):
                 self.groups.append(sp)
                 self.groups_map[sp.name] = sp
 
+        self._eventloop = eventloop
         self.setup_eventloop()
-        self.server = IPCCommandServer(self.fname, self, self._eventloop)
+        self.server = IPCCommandServer(self)
 
         self.current_screen = None
         self.screens = []
@@ -194,25 +140,13 @@ class Qtile(CommandObject):
         self.current_screen = self.screens[0]
         self._drag = None
 
-        self.ignored_events = set([
-            xcffib.xproto.KeyReleaseEvent,
-            xcffib.xproto.ReparentNotifyEvent,
-            xcffib.xproto.CreateNotifyEvent,
-            # DWM handles this to help "broken focusing windows".
-            xcffib.xproto.MapNotifyEvent,
-            xcffib.xproto.LeaveNotifyEvent,
-            xcffib.xproto.FocusOutEvent,
-            xcffib.xproto.FocusInEvent,
-            xcffib.xproto.NoExposureEvent
-        ])
-
         self.conn.flush()
         self.conn.xsync()
-        self._xpoll()
+        self.core._xpoll()
 
         # Map and Grab keys
         for key in self.config.keys:
-            self.map_key(key)
+            self.grab_key(key)
 
         # It fixes problems with focus when clicking windows of some specific clients like xterm
         def noop(qtile):
@@ -240,39 +174,25 @@ class Qtile(CommandObject):
             except:  # noqa: E722
                 logger.exception("failed restoring state")
 
-        self.scan()
+        self.core.scan()
         self.update_net_desktops()
         hook.subscribe.setgroup(self.update_net_desktops)
 
-        self.selection = {
-            "PRIMARY": {"owner": None, "selection": ""},
-            "CLIPBOARD": {"owner": None, "selection": ""}
-        }
-        self.setup_selection()
         hook.fire("startup_complete")
 
-    def setup_selection(self):
-        primary = self.conn.atoms["PRIMARY"]
-        clipboard = self.conn.atoms["CLIPBOARD"]
+    @property
+    def root(self):
+        return self.core._root
 
-        self.selection_window = self.conn.create_window(-1, -1, 1, 1)
-        self.selection_window.set_attribute(eventmask=EventMask.PropertyChange)
-        self.conn.xfixes.select_selection_input(self.selection_window,
-                                                "PRIMARY")
-        self.conn.xfixes.select_selection_input(self.selection_window,
-                                                "CLIPBOARD")
+    @property
+    def conn(self):
+        return self.core.conn
 
-        r = self.conn.conn.core.GetSelectionOwner(primary).reply()
-        self.selection["PRIMARY"]["owner"] = r.owner
-        r = self.conn.conn.core.GetSelectionOwner(clipboard).reply()
-        self.selection["CLIPBOARD"]["owner"] = r.owner
+    @property
+    def selection(self):
+        return self.core._selection
 
-        # ask for selection on starup
-        self.convert_selection(primary)
-        self.convert_selection(clipboard)
-
-    def setup_eventloop(self):
-        self._eventloop = asyncio.new_event_loop()
+    def setup_eventloop(self) -> None:
         self._eventloop.add_signal_handler(signal.SIGINT, self.stop)
         self._eventloop.add_signal_handler(signal.SIGTERM, self.stop)
         self._eventloop.set_exception_handler(
@@ -280,12 +200,10 @@ class Qtile(CommandObject):
         )
 
         logger.debug('Adding io watch')
-        fd = self.conn.conn.get_file_descriptor()
-        self._eventloop.add_reader(fd, self._xpoll)
+        self.core.setup_listener(self, self._eventloop)
 
-        self.setup_python_dbus()
+        self._stopped_event = asyncio.Event(loop=self._eventloop)
 
-    def setup_python_dbus(self):
         # This is a little strange. python-dbus internally depends on gobject,
         # so gobject's threads need to be running, and a gobject "main loop
         # thread" needs to be spawned, but we try to let it only interact with
@@ -296,11 +214,11 @@ class Qtile(CommandObject):
             # because of dbus, if dbus isn't around there's no need to run
             # this thread.
             import dbus  # noqa
-            from gi.repository import GLib
+            from gi.repository import GLib  # type: ignore
 
             def gobject_thread():
                 ctx = GLib.main_context_default()
-                while not self._finalize:
+                while not self._stopped_event.is_set():
                     try:
                         ctx.iteration(True)
                     except Exception:
@@ -310,9 +228,32 @@ class Qtile(CommandObject):
             logger.warning("importing dbus/gobject failed, dbus will not work.")
             self._glib_loop = None
 
-    def finalize(self):
-        self._finalize = True
+    async def async_loop(self):
+        try:
+            await self._stopped_event.wait()
+        finally:
+            await self.finalize()
 
+    def loop(self):
+        self._eventloop.run_until_complete(self.async_loop())
+
+        self._eventloop.close()
+        self._eventloop = None
+
+        if self._restart:
+            logger.warning('Restarting Qtile with os.execv(...)')
+            os.execv(*self._restart)
+
+    def stop(self):
+        # stop gets called in a variety of ways, including from restart().
+        # let's only do a real shutdown if we're not about to re-exec.
+        if not self._restart:
+            self.graceful_shutdown()
+
+        logger.debug('Stopping qtile')
+        self._stopped_event.set()
+
+    async def finalize(self):
         self._eventloop.remove_signal_handler(signal.SIGINT)
         self._eventloop.remove_signal_handler(signal.SIGTERM)
         self._eventloop.set_exception_handler(None)
@@ -321,7 +262,7 @@ class Qtile(CommandObject):
             try:
                 from gi.repository import GLib
                 GLib.idle_add(lambda: None)
-                self._eventloop.run_until_complete(self._glib_loop)
+                await self._glib_loop
             except ImportError:
                 pass
 
@@ -338,19 +279,9 @@ class Qtile(CommandObject):
                     if bar is not None:
                         bar.finalize()
 
-            logger.debug('Removing io watch')
-            fd = self.conn.conn.get_file_descriptor()
-            self._eventloop.remove_reader(fd)
-            self.conn.finalize()
-            self.server.close()
+            self.core.remove_listener(self._eventloop)
         except:  # noqa: E722
             logger.exception('exception during finalize')
-        finally:
-            self._eventloop.close()
-            self._eventloop = None
-        if self._restart:
-            logger.warning('Restarting Qtile with os.execv(...)')
-            os.execv(*self._restart)
 
     def _process_fake_screens(self):
         """
@@ -365,100 +296,69 @@ class Qtile(CommandObject):
                 self.current_screen = s
             self.screens.append(s)
 
-    def _process_screens(self):
+    def _process_screens(self) -> None:
         if hasattr(self.config, 'fake_screens'):
             self._process_fake_screens()
             return
 
-        # What's going on here is a little funny. What we really want is only
-        # screens that don't overlap here; overlapping screens should see the
-        # same parts of the root window (i.e. for people doing xrandr
-        # --same-as). However, the order that X gives us pseudo screens in is
-        # important, because it indicates what people have chosen via xrandr
-        # --primary or whatever. So we need to alias screens that should be
-        # aliased, but preserve order as well. See #383.
-        xywh = {}
-        screenpos = []
-        for s in self.conn.pseudoscreens:
-            pos = (s.x, s.y)
-            (w, h) = xywh.get(pos, (0, 0))
-            if pos not in xywh:
-                screenpos.append(pos)
-            xywh[pos] = (max(w, s.width), max(h, s.height))
+        screen_info = self.core.get_screen_info()
 
-        for i, (x, y) in enumerate(screenpos):
-            (w, h) = xywh[(x, y)]
+        for i, (x, y, w, h) in enumerate(screen_info):
             if i + 1 > len(self.config.screens):
                 scr = Screen()
             else:
                 scr = self.config.screens[i]
+
             if not self.current_screen:
                 self.current_screen = scr
+
             scr._configure(
-                self,
-                i,
-                x,
-                y,
-                w,
-                h,
-                self.groups[i],
+                self, i, x, y, w, h, self.groups[i],
             )
             self.screens.append(scr)
 
-        if not self.screens:
-            if self.config.screens:
-                s = self.config.screens[0]
-            else:
-                s = Screen()
-            self.current_screen = s
-            s._configure(
-                self,
-                0, 0, 0,
-                self.conn.default_screen.width_in_pixels,
-                self.conn.default_screen.height_in_pixels,
-                self.groups[0],
-            )
-            self.screens.append(s)
+    def process_configure(self, width: int, height: int) -> None:
+        screen = self.current_screen
+        screen.resize(0, 0, width, height)
 
-    def _auto_modmasks(self):
-        yield 0
-        yield xcbq.ModMasks["lock"]
-        if self.numlock_mask:
-            yield self.numlock_mask
-            yield self.numlock_mask | xcbq.ModMasks["lock"]
-
-    def map_key(self, key):
-        try:
-            keysym = xcbq.get_keysym(key.key)
-            modmask = xcbq.translate_masks(key.modifiers)
-        except xcbq.XCBQError as e:
-            raise utils.QtileError(e)
-        self.keys_map[(keysym, modmask & self.valid_mask)] = key
-        code = self.conn.keysym_to_keycode(keysym)
-        for amask in self._auto_modmasks():
-            self.root.grab_key(
-                code,
-                modmask | amask,
-                True,
-                xcffib.xproto.GrabMode.Async,
-                xcffib.xproto.GrabMode.Async,
-            )
-
-    def unmap_key(self, key):
-        try:
-            keysym = xcbq.get_keysym(key.key)
-            modmask = xcbq.translate_masks(key.modifiers)
-        except xcbq.XCBQError as e:
-            raise utils.QtileError(e)
-        key_index = (keysym, modmask & self.valid_mask)
-        if key_index not in self.keys_map:
+    def process_key_event(self, keysym: int, mask: int) -> None:
+        key = self.keys_map[(keysym, mask)]
+        if key is None:
+            logger.info("Ignoring unknown keysym: {keysym}".format(keysym=keysym))
             return
-        code = self.conn.keysym_to_keycode(keysym)
-        for amask in self._auto_modmasks():
-            self.root.ungrab_key(code, modmask | amask)
-        del(self.keys_map[key_index])
 
-    def update_net_desktops(self):
+        for cmd in key.commands:
+            if cmd.check(self):
+                status, val = self.server.call(
+                    (cmd.selectors, cmd.name, cmd.args, cmd.kwargs)
+                )
+                if status in (command_interface.ERROR, command_interface.EXCEPTION):
+                    logger.error("KB command error %s: %s" % (cmd.name, val))
+        else:
+            return
+
+    def grab_keys(self) -> None:
+        self.core.ungrab_keys()
+        for key in self.keys_map.values():
+            self.grab_key(key)
+
+    def grab_key(self, key) -> None:
+        keysym, modmask, mask_key = self.core.lookup_key(key)
+        self.core.grab_key(keysym, modmask)
+        self.keys_map[(keysym, mask_key)] = key
+
+    def ungrab_key(self, key) -> None:
+        keysym, modmask, mask_key = self.core.lookup_key(key)
+        key = self.keys_map.pop((keysym, mask_key))
+        if key is not None:
+            self.core.ungrab_key(keysym, modmask)
+
+    def grab_mouse(self) -> None:
+        self.core.ungrab_buttons()
+        for mouse in self.config.mouse:
+            self.core.grab_button(mouse)
+
+    def update_net_desktops(self) -> None:
         try:
             index = self.groups.index(self.current_group)
         # TODO: we should really only except ValueError here, AttributeError is
@@ -469,11 +369,16 @@ class Qtile(CommandObject):
         except (ValueError, AttributeError):
             index = 0
 
-        self.root.set_property("_NET_NUMBER_OF_DESKTOPS", len(self.groups))
-        self.root.set_property(
-            "_NET_DESKTOP_NAMES", "\0".join([i.name for i in self.groups])
-        )
-        self.root.set_property("_NET_CURRENT_DESKTOP", index)
+        self.core.update_net_desktops(self.groups, index)
+
+    def update_client_list(self) -> None:
+        """Updates the client stack list
+
+        This is needed for third party tasklists and drag and drop of tabs in
+        chrome
+        """
+        windows = [wid for wid, c in self.windows_map.items() if c.group]
+        self.core.update_client_list(windows)
 
     def add_group(self, name, layout=None, layouts=None, label=None):
         if name not in self.groups_map.keys():
@@ -547,31 +452,6 @@ class Qtile(CommandObject):
     def current_window(self):
         return self.current_screen.group.current_window
 
-    def scan(self):
-        _, _, children = self.root.query_tree()
-        for item in children:
-            try:
-                attrs = item.get_attributes()
-                state = item.get_wm_state()
-            except (xcffib.xproto.WindowError, xcffib.xproto.AccessError):
-                continue
-
-            if attrs and attrs.map_state == xcffib.xproto.MapState.Unmapped:
-                continue
-            if state and state[0] == window.WithdrawnState:
-                continue
-            self.manage(item)
-
-    def unmanage(self, win):
-        c = self.windows_map.get(win)
-        if c:
-            hook.fire("client_killed", c)
-            self.reset_gaps(c)
-            if getattr(c, "group", None):
-                c.group.remove(c)
-            del self.windows_map[win]
-            self.update_client_list()
-
     def reset_gaps(self, c):
         if c.strut:
             self.update_gaps((0, 0, 0, 0), c.strut)
@@ -600,6 +480,26 @@ class Qtile(CommandObject):
         elif right:
             self.current_screen.right = Gap(right)
         self.current_screen.resize()
+
+    def map_window(self, window: xcbq.Window) -> None:
+        c = self.manage(window)
+        if c and (not c.group or not c.group.screen):
+            return
+        window.map()
+
+    def unmap_window(self, window_id) -> None:
+        c = self.windows_map.get(window_id)
+        if c and getattr(c, "group", None):
+            try:
+                c.window.unmap()
+                c.state = window.WithdrawnState
+            except xcffib.xproto.WindowError:
+                # This means that the window has probably been destroyed,
+                # but we haven't yet seen the DestroyNotify (it is likely
+                # next in the queue). So, we just let these errors pass
+                # since the window is dead.
+                pass
+        self.unmanage(window_id)
 
     def manage(self, w):
         try:
@@ -642,126 +542,15 @@ class Qtile(CommandObject):
         else:
             return self.windows_map[w.wid]
 
-    def update_client_list(self):
-        """Updates the client stack list
-
-        This is needed for third party tasklists and drag and drop of tabs in
-        chrome
-        """
-        windows = [wid for wid, c in self.windows_map.items() if c.group]
-        self.root.set_property("_NET_CLIENT_LIST", windows)
-        # TODO: check stack order
-        self.root.set_property("_NET_CLIENT_LIST_STACKING", windows)
-
-    def grab_mouse(self):
-        self.root.ungrab_button(None, None)
-        for i in self.config.mouse:
-            try:
-                modmask = xcbq.translate_masks(i.modifiers)
-            except xcbq.XCBQError as e:
-                raise utils.QtileError(e)
-            if isinstance(i, Click) and i.focus:
-                # Make a freezing grab on mouse button to gain focus
-                # Event will propagate to target window
-                grabmode = xcffib.xproto.GrabMode.Sync
-            else:
-                grabmode = xcffib.xproto.GrabMode.Async
-            eventmask = EventMask.ButtonPress
-            if isinstance(i, Drag):
-                eventmask |= EventMask.ButtonRelease
-            for amask in self._auto_modmasks():
-                self.root.grab_button(
-                    i.button_code,
-                    modmask | amask,
-                    True,
-                    eventmask,
-                    grabmode,
-                    xcffib.xproto.GrabMode.Async,
-                )
-
-    def grab_keys(self):
-        self.root.ungrab_key(None, None)
-        for key in self.keys_map.values():
-            self.map_key(key)
-
-    def get_target_chain(self, ename, e):
-        """Returns a chain of targets that can handle this event
-
-        Finds functions named `handle_X`, either on the window object itself or
-        on the Qtile instance, where X is the event name (e.g.  EnterNotify,
-        ConfigureNotify, etc).
-
-        The event will be passed to each target in turn for handling, until one
-        of the handlers returns False or None, or the end of the chain is
-        reached.
-        """
-        chain = []
-        handler = "handle_%s" % ename
-        # Certain events expose the affected window id as an "event" attribute.
-        event_events = [
-            "EnterNotify",
-            "ButtonPress",
-            "ButtonRelease",
-            "KeyPress",
-        ]
-        if hasattr(e, "window"):
-            c = self.windows_map.get(e.window)
-        elif hasattr(e, "drawable"):
-            c = self.windows_map.get(e.drawable)
-        elif ename in event_events:
-            c = self.windows_map.get(e.event)
-        else:
-            c = None
-
-        if c is not None and hasattr(c, handler):
-            chain.append(getattr(c, handler))
-
-        if hasattr(self, handler):
-            chain.append(getattr(self, handler))
-
-        if not chain:
-            logger.info("Unhandled event: %r" % ename)
-        return chain
-
-    def _xpoll(self):
-        while True:
-            try:
-                e = self.conn.conn.poll_for_event()
-                if not e:
-                    break
-
-                ename = e.__class__.__name__
-
-                if ename.endswith("Event"):
-                    ename = ename[:-5]
-                if e.__class__ not in self.ignored_events:
-                    logger.debug(ename)
-                    for h in self.get_target_chain(ename, e):
-                        logger.debug("Handling: %s" % ename)
-                        r = h(e)
-                        if not r:
-                            break
-            # Catch some bad X exceptions. Since X is event based, race
-            # conditions can occur almost anywhere in the code. For
-            # example, if a window is created and then immediately
-            # destroyed (before the event handler is evoked), when the
-            # event handler tries to examine the window properties, it
-            # will throw a WindowError exception. We can essentially
-            # ignore it, since the window is already dead and we've got
-            # another event in the queue notifying us to clean it up.
-            except (WindowError, AccessError, DrawableError):
-                pass
-
-            except Exception:
-                error_code = self.conn.conn.has_error()
-                if error_code:
-                    error_string = xcbq.XCB_CONN_ERRORS[error_code]
-                    logger.exception("Shutting down due to X connection error %s (%s)" % (error_string, error_code))
-                    self.stop()
-                    return
-
-                logger.exception("Got an exception in poll loop")
-        self.conn.flush()
+    def unmanage(self, win):
+        c = self.windows_map.get(win)
+        if c:
+            hook.fire("client_killed", c)
+            self.reset_gaps(c)
+            if getattr(c, "group", None):
+                c.group.remove(c)
+            del self.windows_map[win]
+            self.update_client_list()
 
     def graceful_shutdown(self):
         """
@@ -806,22 +595,6 @@ class Qtile(CommandObject):
             if len(pids) == 0:
                 break
             time.sleep(0.1)
-
-    def stop(self):
-        # stop gets called in a variety of ways, including from restart().
-        # let's only do a real shutdown if we're not about to re-exec.
-        if not self._restart:
-            self.graceful_shutdown()
-
-        logger.debug('Stopping eventloop')
-        self._eventloop.stop()
-
-    def loop(self):
-        self.server.start()
-        try:
-            self._eventloop.run_forever()
-        finally:
-            self.finalize()
 
     def find_screen(self, x, y):
         """Find a screen based on the x and y offset"""
@@ -892,78 +665,13 @@ class Qtile(CommandObject):
                 closest_screen = s
         return closest_screen
 
-    def handle_SelectionNotify(self, e):  # noqa: N802
-        if not getattr(e, "owner", None):
-            return
-
-        name = self.conn.atoms.get_name(e.selection)
-        self.selection[name]["owner"] = e.owner
-        self.selection[name]["selection"] = ""
-
-        self.convert_selection(e.selection)
-
-        hook.fire("selection_notify", name, self.selection[name])
-
-    def convert_selection(self, selection, _type="UTF8_STRING"):
-        type_atom = self.conn.atoms[_type]
-        self.conn.conn.core.ConvertSelection(self.selection_window.wid,
-                                             selection,
-                                             type_atom, selection,
-                                             xcffib.CurrentTime)
-
-    def handle_PropertyNotify(self, e):  # noqa: N802
-        name = self.conn.atoms.get_name(e.atom)
-        # it's the selection property
-        if name in ("PRIMARY", "CLIPBOARD"):
-            assert e.window == self.selection_window.wid
-            prop = self.selection_window.get_property(e.atom, "UTF8_STRING")
-
-            # If the selection property is None, it is unset, which means the
-            # clipboard is empty.
-            value = prop and prop.value.to_utf8() or ""
-
-            self.selection[name]["selection"] = value
-            hook.fire("selection_change", name, self.selection[name])
-
-    def handle_EnterNotify(self, e):  # noqa: N802
-        if e.event in self.windows_map:
+    def enter_event(self, event) -> Optional[bool]:
+        if event.event in self.windows_map:
             return True
-        s = self.find_screen(e.root_x, e.root_y)
-        if s:
-            self.focus_screen(s.index, warp=False)
-
-    def handle_ClientMessage(self, event):  # noqa: N802
-        atoms = self.conn.atoms
-
-        opcode = event.type
-        data = event.data
-
-        # handle change of desktop
-        if atoms["_NET_CURRENT_DESKTOP"] == opcode:
-            index = data.data32[0]
-            try:
-                self.current_screen.set_group(self.groups[index])
-            except IndexError:
-                logger.info("Invalid Desktop Index: %s" % index)
-
-    def handle_KeyPress(self, e):  # noqa: N802
-        keysym = self.conn.code_to_syms[e.detail][0]
-        state = e.state
-        if self.numlock_mask:
-            state = e.state | self.numlock_mask
-        k = self.keys_map.get((keysym, state & self.valid_mask))
-        if not k:
-            logger.info("Ignoring unknown keysym: %s" % keysym)
-            return
-        for i in k.commands:
-            if i.check(self):
-                status, val = self.server.call(
-                    (i.selectors, i.name, i.args, i.kwargs)
-                )
-                if status in (command_interface.ERROR, command_interface.EXCEPTION):
-                    logger.error("KB command error %s: %s" % (i.name, val))
-        else:
-            return
+        screen = self.find_screen(event.root_x, event.root_y)
+        if screen:
+            self.focus_screen(screen.index, warp=False)
+        return None
 
     def cmd_focus_by_click(self, e):
         """Bring a window to the front
@@ -992,13 +700,8 @@ class Qtile(CommandObject):
         self.conn.conn.core.AllowEvents(xcffib.xproto.Allow.ReplayPointer, e.time)
         self.conn.conn.flush()
 
-    def handle_ButtonPress(self, e):  # noqa: N802
-        self.mouse_position = (e.event_x, e.event_y)
-        button_code = e.detail
-        state = e.state
-        if self.numlock_mask:
-            state = e.state | self.numlock_mask
-
+    def process_button_click(self, button_code, state, x, y, event) -> None:
+        self.mouse_position = (x, y)
         k = self.mouse_map.get(button_code)
         for m in k:
             try:
@@ -1012,22 +715,20 @@ class Qtile(CommandObject):
                 for i in m.commands:
                     if i.check(self):
                         if m.focus == "before":
-                            self.cmd_focus_by_click(e)
+                            self.cmd_focus_by_click(event)
                         status, val = self.server.call(
                             (i.selectors, i.name, i.args, i.kwargs))
                         if m.focus == "after":
-                            self.cmd_focus_by_click(e)
+                            self.cmd_focus_by_click(event)
                         if status in (command_interface.ERROR, command_interface.EXCEPTION):
                             logger.error(
                                 "Mouse command error %s: %s" % (i.name, val)
                             )
             elif isinstance(m, Drag):
-                x = e.event_x
-                y = e.event_y
                 if m.start:
                     i = m.start
                     if m.focus == "before":
-                        self.cmd_focus_by_click(e)
+                        self.cmd_focus_by_click(event)
                     status, val = self.server.call(
                         (i.selectors, i.name, i.args, i.kwargs))
                     if status in (command_interface.ERROR, command_interface.EXCEPTION):
@@ -1038,22 +739,11 @@ class Qtile(CommandObject):
                 else:
                     val = (0, 0)
                 if m.focus == "after":
-                    self.cmd_focus_by_click(e)
+                    self.cmd_focus_by_click(event)
                 self._drag = (x, y, val[0], val[1], m.commands)
-                self.root.grab_pointer(
-                    True,
-                    xcbq.ButtonMotionMask |
-                    xcbq.AllButtonsMask |
-                    xcbq.ButtonReleaseMask,
-                    xcffib.xproto.GrabMode.Async,
-                    xcffib.xproto.GrabMode.Async,
-                )
+                self.core.grab_pointer()
 
-    def handle_ButtonRelease(self, e):  # noqa: N802
-        button_code = e.detail
-        state = e.state & ~xcbq.AllButtonsMask
-        if self.numlock_mask:
-            state = state | self.numlock_mask
+    def process_button_release(self, button_code):
         k = self.mouse_map.get(button_code)
         for m in k:
             if not m:
@@ -1063,15 +753,16 @@ class Qtile(CommandObject):
                 continue
             if isinstance(m, Drag):
                 self._drag = None
-                self.root.ungrab_pointer()
+                self.core.ungrab_pointer()
 
-    def handle_MotionNotify(self, e):  # noqa: N802
-        self.mouse_position = (e.event_x, e.event_y)
+    def process_button_motion(self, x, y):
+        self.mouse_position = (x, y)
+
         if self._drag is None:
             return
         ox, oy, rx, ry, cmd = self._drag
-        dx = e.event_x - ox
-        dy = e.event_y - oy
+        dx = x - ox
+        dy = y - oy
         if dx or dy:
             for i in cmd:
                 if i.check(self):
@@ -1086,64 +777,6 @@ class Qtile(CommandObject):
                             "Mouse command error %s: %s" % (i.name, val)
                         )
 
-    def handle_ConfigureNotify(self, e):  # noqa: N802
-        """Handle xrandr events"""
-        screen = self.current_screen
-        if e.window == self.root.wid and \
-                e.width != screen.width and \
-                e.height != screen.height:
-            screen.resize(0, 0, e.width, e.height)
-
-    def handle_ConfigureRequest(self, e):  # noqa: N802
-        # It's not managed, or not mapped, so we just obey it.
-        cw = xcffib.xproto.ConfigWindow
-        args = {}
-        if e.value_mask & cw.X:
-            args["x"] = max(e.x, 0)
-        if e.value_mask & cw.Y:
-            args["y"] = max(e.y, 0)
-        if e.value_mask & cw.Height:
-            args["height"] = max(e.height, 0)
-        if e.value_mask & cw.Width:
-            args["width"] = max(e.width, 0)
-        if e.value_mask & cw.BorderWidth:
-            args["borderwidth"] = max(e.border_width, 0)
-        w = xcbq.Window(self.conn, e.window)
-        w.configure(**args)
-
-    def handle_MappingNotify(self, e):  # noqa: N802
-        self.conn.refresh_keymap()
-        if e.request == xcffib.xproto.Mapping.Keyboard:
-            self.grab_keys()
-
-    def handle_MapRequest(self, e):  # noqa: N802
-        w = xcbq.Window(self.conn, e.window)
-        c = self.manage(w)
-        if c and (not c.group or not c.group.screen):
-            return
-        w.map()
-
-    def handle_DestroyNotify(self, e):  # noqa: N802
-        self.unmanage(e.window)
-
-    def handle_UnmapNotify(self, e):  # noqa: N802
-        if e.event != self.root.wid:
-            c = self.windows_map.get(e.window)
-            if c and getattr(c, "group", None):
-                try:
-                    c.window.unmap()
-                    c.state = window.WithdrawnState
-                except xcffib.xproto.WindowError:
-                    # This means that the window has probably been destroyed,
-                    # but we haven't yet seen the DestroyNotify (it is likely
-                    # next in the queue). So, we just let these errors pass
-                    # since the window is dead.
-                    pass
-            self.unmanage(e.window)
-
-    def handle_ScreenChangeNotify(self, e):  # noqa: N802
-        hook.fire("screen_change", self, e)
-
     def focus_screen(self, n, warp=True):
         """Have Qtile move to screen and put focus there"""
         if n >= len(self.screens):
@@ -1156,7 +789,8 @@ class Qtile(CommandObject):
             self.current_group.focus(self.current_window, warp)
 
     def move_to_group(self, group):
-        """Create a group if it doesn't exist and move a windows there"""
+        """Create a group if it doesn't exist and move
+        the current window there"""
         if self.current_window and group:
             self.add_group(group)
             self.current_window.togroup(group)
@@ -1436,7 +1070,7 @@ class Qtile(CommandObject):
         d = DummyEv()
         d.detail = self.conn.first_sym_to_code[keysym]
         d.state = modmasks
-        self.handle_KeyPress(d)
+        self.core.handle_KeyPress(d)
 
     def cmd_restart(self):
         """Restart qtile"""
@@ -1582,7 +1216,7 @@ class Qtile(CommandObject):
 
     def cmd_qtile_info(self):
         """Returns a dictionary of info on the Qtile instance"""
-        return dict(socketname=self.fname)
+        return {}
 
     def cmd_shutdown(self):
         """Quit Qtile"""

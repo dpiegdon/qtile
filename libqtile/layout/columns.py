@@ -78,7 +78,7 @@ class Columns(Layout):
     """Extension of the Stack layout.
 
     The screen is split into columns, which can be dynamically added or
-    removed.  Each column can present is windows in 2 modes: split or
+    removed.  Each column can present its windows in 2 modes: split or
     stacked.  In split mode, all windows are presented simultaneously,
     spliting the column space.  In stacked mode, only a single window is
     presented from the stack of windows.  Columns and windows can be
@@ -128,6 +128,8 @@ class Columns(Layout):
          "Wrap the screen when moving focus across columns."),
         ("wrap_focus_rows", True,
          "Wrap the screen when moving focus across rows."),
+        ("wrap_focus_stacks", True,
+         "Wrap the screen when moving focus across stacked."),
     ]
 
     def __init__(self, **config):
@@ -322,9 +324,14 @@ class Columns(Layout):
                 self.current = (self.current + 1)
         self.group.focus(self.cc.cw, True)
 
+    def want_wrap(self, col):
+        if col.split:
+            return self.wrap_focus_rows
+        return self.wrap_focus_stacks
+
     def cmd_up(self):
         col = self.cc
-        if self.wrap_focus_rows:
+        if self.want_wrap(col):
             if len(col) > 1:
                 col.current_index -= 1
         else:
@@ -334,7 +341,7 @@ class Columns(Layout):
 
     def cmd_down(self):
         col = self.cc
-        if self.wrap_focus_rows:
+        if self.want_wrap(col):
             if len(col) > 1:
                 col.current_index += 1
         else:
