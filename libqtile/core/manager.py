@@ -96,6 +96,7 @@ class Qtile(CommandObject):
 
         self.numlock_mask, self.valid_mask = self.core.masks
 
+        self.core.wmname = getattr(self.config, "wmname", "qtile")
         if config.main:
             config.main(self)
 
@@ -316,6 +317,9 @@ class Qtile(CommandObject):
                 self, i, x, y, w, h, self.groups[i],
             )
             self.screens.append(scr)
+
+    def paint_screen(self, screen, image_path, mode=None):
+        self.core.painter.paint(screen, image_path, mode)
 
     def process_configure(self, width: int, height: int) -> None:
         screen = self.current_screen

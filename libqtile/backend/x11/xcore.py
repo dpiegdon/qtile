@@ -26,6 +26,7 @@ from typing import Callable, Iterator, List, Optional, Tuple, TYPE_CHECKING
 
 import xcffib
 import xcffib.xproto
+import xcffib.render
 
 from . import xcbq
 from libqtile import config, hook, utils, window
@@ -84,9 +85,11 @@ class XCore(base.Core):
             "_NET_SUPPORTED", [self.conn.atoms[x] for x in xcbq.SUPPORTED_ATOMS]
         )
 
-        wmname = "qtile"
+        self._last_event_timestamp = xcffib.CurrentTime
+
+        self._wmname = "qtile"
         self._supporting_wm_check_window = self.conn.create_window(-1, -1, 1, 1)
-        self._supporting_wm_check_window.set_property("_NET_WM_NAME", wmname)
+        self._supporting_wm_check_window.set_property("_NET_WM_NAME", self._wmname)
         self._supporting_wm_check_window.set_property(
             "_NET_SUPPORTING_WM_CHECK", self._supporting_wm_check_window.wid
         )
@@ -121,6 +124,7 @@ class XCore(base.Core):
         self._root.set_cursor("left_ptr")
 
         self.qtile = None  # type: Optional[Qtile]
+        self._painter = None
 
         numlock_code = self.conn.keysym_to_keycode(xcbq.keysyms["Num_Lock"])
         self._numlock_mask = xcbq.ModMasks.get(self.conn.get_modifier(numlock_code), 0)
@@ -148,6 +152,15 @@ class XCore(base.Core):
             )
 
         return [(x, y, w, h) for (x, y), (w, h) in xywh.items()]
+
+    @property
+    def wmname(self):
+        return self._wmname
+
+    @wmname.setter
+    def wmname(self, wmname):
+        self._wmname = wmname
+        self._supporting_wm_check_window.set_property("_NET_WM_NAME", wmname)
 
     @property
     def masks(self) -> Tuple[int, int]:
@@ -244,6 +257,9 @@ class XCore(base.Core):
                 xcffib.xproto.WindowError,
                 xcffib.xproto.AccessError,
                 xcffib.xproto.DrawableError,
+                xcffib.xproto.GContextError,
+                xcffib.xproto.PixmapError,
+                xcffib.render.PictureError,
             ):
                 pass
             except Exception:
@@ -273,6 +289,9 @@ class XCore(base.Core):
         """
         assert self.qtile is not None
 
+        if hasattr(event, "time") and event.time > 0:
+            self._last_event_timestamp = event.time
+
         handler = "handle_{event_type}".format(event_type=event_type)
         # Certain events expose the affected window id as an "event" attribute.
         event_events = [
@@ -300,6 +319,12 @@ class XCore(base.Core):
         if not chain:
             logger.info("Unhandled event: {event_type}".format(event_type=event_type))
         return chain
+
+    def get_valid_timestamp(self):
+        """Get a valid timestamp, i.e. not CurrentTime, for X server.
+
+        It may be used in cases where CurrentTime is unacceptable for X server."""
+        return self._last_event_timestamp
 
     @property
     def display_name(self) -> str:
@@ -540,3 +565,9 @@ class XCore(base.Core):
 
     def handle_ScreenChangeNotify(self, event) -> None:  # noqa: N802
         hook.fire("screen_change", self.qtile, event)
+
+    @property
+    def painter(self):
+        if self._painter is None:
+            self._painter = xcbq.Painter(self._display_name)
+        return self._painter
