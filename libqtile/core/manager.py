@@ -326,7 +326,10 @@ class Qtile(CommandObject):
         screen.resize(0, 0, width, height)
 
     def process_key_event(self, keysym: int, mask: int) -> None:
-        key = self.keys_map[(keysym, mask)]
+        try:
+            key = self.keys_map[(keysym, mask)]
+        except KeyError:
+            key = None
         if key is None:
             logger.info("Ignoring unknown keysym: {keysym}".format(keysym=keysym))
             return
