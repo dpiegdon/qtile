@@ -27,15 +27,19 @@
 
 import pytest
 
-from libqtile import layout
 import libqtile.config
-from .layout_utils import assert_dimensions, assert_focused, assert_focus_path
-from ..conftest import no_xinerama
+from libqtile import layout
+from libqtile.confreader import Config
+from test.conftest import no_xinerama
+from test.layouts.layout_utils import (
+    assert_dimensions,
+    assert_focus_path,
+    assert_focused,
+)
 
 
-class SliceConfig:
+class SliceConfig(Config):
     auto_fullscreen = True
-    main = None
     groups = [
         libqtile.config.Group("a"),
     ]

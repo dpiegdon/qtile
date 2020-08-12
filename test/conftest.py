@@ -25,24 +25,25 @@ import functools
 import logging
 import multiprocessing
 import os
-import pytest
 import subprocess
 import sys
 import tempfile
 import time
 import traceback
 
+import pytest
 import xcffib
 import xcffib.testing
 import xcffib.xproto
 
 import libqtile.config
+from libqtile import command_client, command_interface, ipc
 from libqtile.backend.x11 import xcore
+from libqtile.confreader import Config
 from libqtile.core.session_manager import SessionManager
+from libqtile.lazy import lazy
 from libqtile.log_utils import init_log
 from libqtile.resources import default_config
-from libqtile import command_client, command_interface, ipc
-from libqtile.lazy import lazy
 
 # the default sizes for the Xephyr windows
 WIDTH = 800
@@ -81,6 +82,8 @@ class Retry:
                     return fn(*args, **kwargs)
                 except ignore_exceptions:
                     pass
+                except AssertionError:
+                    break
                 time.sleep(dt)
                 dt *= 1.5
             if self.return_on_fail:
@@ -91,14 +94,20 @@ class Retry:
 
 
 @Retry(ignore_exceptions=(xcffib.ConnectionException,), return_on_fail=True)
-def can_connect_x11(disp=':0'):
+def can_connect_x11(disp=':0', *, ok=None):
+    if ok is not None and not ok():
+        raise AssertionError()
+
     conn = xcffib.connect(display=disp)
     conn.disconnect()
     return True
 
 
 @Retry(ignore_exceptions=(ipc.IPCError,), return_on_fail=True)
-def can_connect_qtile(socket_path):
+def can_connect_qtile(socket_path, *, ok=None):
+    if ok is not None and not ok():
+        raise AssertionError()
+
     ipc_client = ipc.Client(socket_path)
     ipc_command = command_interface.IPCCommandInterface(ipc_client)
     client = command_client.InteractiveCommandClient(ipc_command)
@@ -117,7 +126,7 @@ def whereis(program):
     return None
 
 
-class BareConfig:
+class BareConfig(Config):
     auto_fullscreen = True
     groups = [
         libqtile.config.Group("a"),
@@ -144,7 +153,6 @@ class BareConfig:
     ]
     mouse = []
     screens = [libqtile.config.Screen()]
-    main = None
     follow_mouse_focus = False
 
 
@@ -174,9 +182,14 @@ class Xephyr:
 
         self.proc = None  # Handle to Xephyr instance, subprocess.Popen object
         self.display = None
+        self.display_file = None
 
     def __enter__(self):
-        self.start_xephyr()
+        try:
+            self.start_xephyr()
+        except:  # noqa: E722
+            self.stop_xephyr()
+            raise
 
         return self
 
@@ -190,7 +203,8 @@ class Xephyr:
         which is used to setup the instance.
         """
         # get a new display
-        self.display = ":{}".format(xcffib.testing.find_display())
+        display, self.display_file = xcffib.testing.find_display()
+        self.display = ":{}".format(display)
 
         # build up arguments
         args = [
@@ -212,11 +226,13 @@ class Xephyr:
 
         self.proc = subprocess.Popen(args)
 
-        if can_connect_x11(self.display):
+        if can_connect_x11(self.display, ok=lambda: self.proc.poll() is None):
             return
+
+        # we wern't able to get a display up
+        if self.proc.poll() is None:
+            raise AssertionError("Unable to conncet to running Xephyr")
         else:
-            # we wern't able to get a display up
-            self.display = None
             raise AssertionError("Unable to start Xephyr, quit with return code {:d}".format(
                 self.proc.returncode
             ))
@@ -237,6 +253,7 @@ class Xephyr:
 
         # clean up the lock file for the display we allocated
         try:
+            self.display_file.close()
             os.remove(xcffib.testing.lock_path(int(self.display[1:])))
         except OSError:
             pass
@@ -275,7 +292,7 @@ class Qtile:
         self.proc.start()
 
         # First, wait for socket to appear
-        if can_connect_qtile(self.sockfile):
+        if can_connect_qtile(self.sockfile, ok=lambda: not rpipe.poll()):
             ipc_client = ipc.Client(self.sockfile)
             ipc_command = command_interface.IPCCommandInterface(ipc_client)
             self.c = command_client.InteractiveCommandClient(ipc_command)
@@ -310,6 +327,7 @@ class Qtile:
             self.proc.join(10)
 
             if self.proc.is_alive():
+                print("Killing qtile forcefully", file=sys.stderr)
                 # desperate times... this probably messes with multiprocessing...
                 try:
                     os.kill(self.proc.pid, 9)
@@ -329,6 +347,24 @@ class Qtile:
 
             self.testwindows.remove(proc)
 
+    def create_window(self, create, failed=None):
+        """
+        Uses the fucntion f to create a window.
+
+        Waits until qtile actually maps the window and then returns.
+        """
+        client = self.c
+        start = len(client.windows())
+        create()
+
+        @Retry(ignore_exceptions=(RuntimeError,), fail_msg='Window never appeared...')
+        def success():
+            while failed is None or not failed():
+                if len(client.windows()) > start:
+                    return True
+            raise RuntimeError("not here yet")
+        return success()
+
     def _spawn_window(self, *args):
         """Starts a program which opens a window
 
@@ -338,22 +374,20 @@ class Qtile:
         """
         if not args:
             raise AssertionError("Trying to run nothing! (missing arguments)")
-        client = self.c
-        start = len(client.windows())
-        proc = subprocess.Popen(args, env={"DISPLAY": self.display})
 
-        @Retry(ignore_exceptions=(RuntimeError,))
-        def success():
-            while proc.poll() is None:
-                if len(client.windows()) > start:
-                    return True
+        proc = None
+
+        def spawn():
+            nonlocal proc
+            proc = subprocess.Popen(args, env={"DISPLAY": self.display})
+
+        def failed():
+            if proc.poll() is not None:
+                return True
             return False
-        if success():
-            self.testwindows.append(proc)
-        else:
-            proc.terminate()
-            proc.wait()
-            raise AssertionError("Window never appeared...")
+
+        self.create_window(spawn, failed=failed)
+        self.testwindows.append(proc)
         return proc
 
     def _spawn_script(self, script, *args):
@@ -412,10 +446,6 @@ class Qtile:
         path = whereis("xeyes")
         return self._spawn_window(path)
 
-    def test_gkrellm(self):
-        path = whereis("gkrellm")
-        return self._spawn_window(path)
-
     def test_xcalc(self):
         path = whereis("xcalc")
         return self._spawn_window(path)
@@ -464,8 +494,8 @@ def qtile(request, xephyr):
 
     with tempfile.NamedTemporaryFile() as f:
         sockfile = f.name
-        q = Qtile(sockfile, xephyr.display, request.config.getoption("--debuglog"))
         try:
+            q = Qtile(sockfile, xephyr.display, request.config.getoption("--debuglog"))
             q.start(config)
 
             yield q
@@ -477,9 +507,8 @@ def qtile(request, xephyr):
 def qtile_nospawn(request, xephyr):
     with tempfile.NamedTemporaryFile() as f:
         sockfile = f.name
-        q = Qtile(sockfile, xephyr.display, request.config.getoption("--debuglog"))
-
         try:
+            q = Qtile(sockfile, xephyr.display, request.config.getoption("--debuglog"))
             yield q
         finally:
             q.terminate()

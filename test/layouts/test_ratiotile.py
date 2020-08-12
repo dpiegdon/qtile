@@ -25,18 +25,19 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-import pytest
 from time import sleep
 
-from libqtile import layout
+import pytest
+
 import libqtile.config
-from ..conftest import no_xinerama
-from .layout_utils import assert_focused, assert_focus_path
+from libqtile import layout
+from libqtile.confreader import Config
+from test.conftest import no_xinerama
+from test.layouts.layout_utils import assert_focus_path, assert_focused
 
 
-class RatioTileConfig:
+class RatioTileConfig(Config):
     auto_fullscreen = True
-    main = None
     groups = [
         libqtile.config.Group("a"),
         libqtile.config.Group("b"),

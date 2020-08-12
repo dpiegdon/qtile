@@ -29,8 +29,8 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from .base import Layout
-from .. import drawer, hook, window
+from libqtile import drawer, hook, window
+from libqtile.layout.base import Layout
 
 to_superscript = dict(zip(map(ord, u'0123456789'), map(ord, u'⁰¹²³⁴⁵⁶⁷⁸⁹')))
 
@@ -89,7 +89,7 @@ class TreeNode:
         if not self.expanded and self.children:
             return "{:d}".format(
                 len(self.children)
-            ).translate(to_superscript).encode('utf-8') + title
+            ).translate(to_superscript) + title
         return title
 
     def get_first_window(self):
@@ -100,10 +100,11 @@ class TreeNode:
         """
         if isinstance(self, Window):
             return self
-        for i in self.children:
-            node = i.get_first_window()
-            if node:
-                return node
+        if self.expanded:
+            for i in self.children:
+                node = i.get_first_window()
+                if node:
+                    return node
 
     def get_last_window(self):
         """Find the last Window under this node
@@ -111,10 +112,11 @@ class TreeNode:
         Finds last `Window` by depth-first search, otherwise returns self if
         this is a `Window`.
         """
-        for i in reversed(self.children):
-            node = i.get_last_window()
-            if node:
-                return node
+        if self.expanded:
+            for i in reversed(self.children):
+                node = i.get_last_window()
+                if node:
+                    return node
         if isinstance(self, Window):
             return self
 
@@ -309,9 +311,47 @@ class TreeTab(Layout):
     """Tree Tab Layout
 
     This layout works just like Max but displays tree of the windows at the
-    left border of the screen, which allows you to overview all opened windows.
+    left border of the screen_rect, which allows you to overview all opened windows.
     It's designed to work with ``uzbl-browser`` but works with other windows
     too.
+
+    The panel at the left border contains sections, each of which contains
+    windows. Initially the panel looks like flat lists inside its
+    section, and looks like trees if some of the windows are "moved" left or
+    right.
+
+    For example, it looks like below with two sections initially:
+
+    ::
+
+        +------------+
+        |Section Foo |
+        +------------+
+        | Window A   |
+        +------------+
+        | Window B   |
+        +------------+
+        | Window C   |
+        +------------+
+        |Section Bar |
+        +------------+
+
+    And then it will look like below if "Window B" is moved right and "Window C"
+    is moved right too:
+
+    ::
+
+        +------------+
+        |Section Foo |
+        +------------+
+        | Window A   |
+        +------------+
+        |  Window B  |
+        +------------+
+        |   Window C |
+        +------------+
+        |Section Bar |
+        +------------+
     """
 
     defaults = [
@@ -415,15 +455,15 @@ class TreeTab(Layout):
         del self._nodes[win]
         self.draw_panel()
 
-    def _create_panel(self):
+    def _create_panel(self, screen_rect):
         self._panel = window.Internal.create(
             self.group.qtile,
-            0,
-            0,
+            screen_rect.x,
+            screen_rect.y,
             self.panel_width,
             100
         )
-        self._create_drawer()
+        self._create_drawer(screen_rect)
         self._panel.handle_Expose = self._handle_Expose
         self._panel.handle_ButtonPress = self._handle_ButtonPress
         self.group.qtile.windows_map[self._panel.window.wid] = self._panel
@@ -445,11 +485,11 @@ class TreeTab(Layout):
         if node:
             self.group.focus(node.window, False)
 
-    def configure(self, client, screen):
+    def configure(self, client, screen_rect):
         if self._nodes and client is self._focused:
             client.place(
-                screen.x, screen.y,
-                screen.width, screen.height,
+                screen_rect.x, screen_rect.y,
+                screen_rect.width, screen_rect.height,
                 0,
                 None
             )
@@ -463,15 +503,52 @@ class TreeTab(Layout):
             self._drawer.finalize()
 
     def info(self):
+
+        def show_section_tree(root):
+            '''Show a section tree in a nested list, whose every element has the form: `[root, [subtrees]]`.
+
+            For `[root, [subtrees]]`, The first element is the root node, and the second is its a list of its subtrees.
+            For example, a section with below windows hierarchy on the panel:
+            - a
+              - d
+                - e
+              - f
+            - b
+              - g
+              - h
+            - c
+
+            will return [
+                         [a,
+                           [d, [e]],
+                           [f]],
+                         [b, [g], [h]],
+                         [c],
+                        ]
+            '''
+            tree = []
+            if isinstance(root, Window):
+                tree.append(root.window.name)
+            if root.expanded and root.children:
+                for child in root.children:
+                    tree.append(show_section_tree(child))
+            return tree
+
         d = Layout.info(self)
-        d["clients"] = [x.name for x in self._nodes]
+        # Sort client names to work around an internal difference betwen Python 3.5 and 3.6+
+        d["clients"] = sorted([x.name for x in self._nodes])
         d["sections"] = [x.title for x in self._tree.children]
+
+        trees = {}
+        for section in self._tree.children:
+            trees[section.title] = show_section_tree(section)
+        d["client_trees"] = trees
         return d
 
-    def show(self, screen):
+    def show(self, screen_rect):
         if not self._panel:
-            self._create_panel()
-        panel, body = screen.hsplit(self.panel_width)
+            self._create_panel(screen_rect)
+        panel, body = screen_rect.hsplit(self.panel_width)
         self._resize_panel(panel)
         self._panel.unhide()
 
@@ -637,13 +714,13 @@ class TreeTab(Layout):
         self.panel_width -= 10
         self.group.layout_all()
 
-    def _create_drawer(self):
+    def _create_drawer(self, screen_rect):
         if self._drawer is None:
             self._drawer = drawer.Drawer(
                 self.group.qtile,
                 self._panel.window.wid,
                 self.panel_width,
-                self.group.screen.dheight
+                screen_rect.height
             )
         self._drawer.clear(self.bg_color)
         self._layout = self._drawer.textlayout(
@@ -655,18 +732,18 @@ class TreeTab(Layout):
             wrap=False
         )
 
-    def layout(self, windows, screen):
-        panel, body = screen.hsplit(self.panel_width)
+    def layout(self, windows, screen_rect):
+        panel, body = screen_rect.hsplit(self.panel_width)
         self._resize_panel(panel)
         Layout.layout(self, windows, body)
 
-    def _resize_panel(self, rect):
+    def _resize_panel(self, screen_rect):
         if self._panel:
             self._panel.place(
-                rect.x, rect.y,
-                rect.width, rect.height,
+                screen_rect.x, screen_rect.y,
+                screen_rect.width, screen_rect.height,
                 0,
                 None
             )
-            self._create_drawer()
+            self._create_drawer(screen_rect)
             self.draw_panel()

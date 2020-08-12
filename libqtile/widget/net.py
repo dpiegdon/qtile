@@ -17,17 +17,24 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
+from math import log
+from typing import Tuple
+
 import psutil
 
 from libqtile.log_utils import logger
 from libqtile.widget import base
 
-from typing import Tuple
-from math import log
-
 
 class Net(base.ThreadedPollText):
-    """Displays interface down and up speed"""
+    """
+    Displays interface down and up speed
+
+
+    Widget requirements: psutil_.
+
+    .. _psutil: https://pypi.org/project/psutil/
+    """
     orientations = base.ORIENTATION_HORIZONTAL
     defaults = [
         ('format', '{interface}: {down} \u2193\u2191 {up}',

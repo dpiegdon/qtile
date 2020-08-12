@@ -33,20 +33,17 @@ import os
 import platform
 import re
 import warnings
-
 from abc import ABC, abstractclassmethod
 from enum import Enum, unique
 from pathlib import Path
-from subprocess import check_output, CalledProcessError
-from typing import Any, List, NamedTuple, Optional, Tuple  # noqa: F401
+from subprocess import CalledProcessError, check_output
+from typing import Any, Dict, List, NamedTuple, Optional, Tuple
 
-from libqtile import bar
+from libqtile import bar, configurable, images
+from libqtile.images import Img
 from libqtile.log_utils import logger
-from libqtile.images import Img  # noqa: F401
-from . import base
-from .. import images, configurable
-
-from typing import Dict  # noqa: F401
+from libqtile.utils import send_notification
+from libqtile.widget import base
 
 
 @unique
@@ -323,6 +320,7 @@ class Battery(base.ThreadedPollText):
         ('low_foreground', 'FF0000', 'Font color on low battery'),
         ('update_interval', 60, 'Seconds between status updates'),
         ('battery', 0, 'Which battery should be monitored (battery number or name)'),
+        ('notify_below', None, 'Send a notification below this battery level.'),
     ]
 
     def __init__(self, **config) -> None:
@@ -335,6 +333,7 @@ class Battery(base.ThreadedPollText):
         self.add_defaults(self.defaults)
 
         self._battery = self._load_battery(**config)
+        self._has_notified = False
 
     @staticmethod
     def _load_battery(**config):
@@ -356,6 +355,15 @@ class Battery(base.ThreadedPollText):
             status = self._battery.update_status()
         except RuntimeError as e:
             return 'Error: {}'.format(e)
+
+        if self.notify_below:
+            percent = int(status.percent * 100)
+            if percent < self.notify_below:
+                if not self._has_notified:
+                    send_notification("Warning", "Battery at {0}%".format(percent), urgent=True)
+                    self._has_notified = True
+            elif self._has_notified:
+                self._has_notified = False
 
         return self.build_string(status)
 

@@ -27,14 +27,13 @@
 # SOFTWARE.
 
 import contextlib
+
 import xcffib
 import xcffib.xproto
 
+from libqtile import hook, utils, window
 from libqtile.command_object import CommandObject
-from . import hook
-from . import window
-from . import utils
-from .log_utils import logger
+from libqtile.log_utils import logger
 
 
 class _Group(CommandObject):
@@ -124,7 +123,7 @@ class _Group(CommandObject):
                 )
                 self.layout_all()
                 return
-        raise ValueError("No such layout: %s" % layout)
+        logger.error("No such layout: {}".format(layout))
 
     def use_layout(self, index):
         assert 0 <= index < len(self.layouts), "layout index out of bounds"
@@ -132,8 +131,8 @@ class _Group(CommandObject):
         self.current_layout = index
         hook.fire("layout_change", self.layouts[self.current_layout], self)
         self.layout_all()
-        screen = self.screen.get_rect()
-        self.layout.show(screen)
+        screen_rect = self.screen.get_rect()
+        self.layout.show(screen_rect)
 
     def use_next_layout(self):
         self.use_layout((self.current_layout + 1) % (len(self.layouts)))
@@ -154,15 +153,15 @@ class _Group(CommandObject):
                     x for x in self.windows
                     if x.floating and not x.minimized
                 ]
-                screen = self.screen.get_rect()
+                screen_rect = self.screen.get_rect()
                 if normal:
                     try:
-                        self.layout.layout(normal, screen)
+                        self.layout.layout(normal, screen_rect)
                     except Exception:
                         logger.exception("Exception in layout %s",
                                          self.layout.name)
                 if floating:
-                    self.floating_layout.layout(floating, screen)
+                    self.floating_layout.layout(floating, screen_rect)
                 if self.current_window and \
                         self.screen == self.qtile.current_screen:
                     self.current_window.focus(warp)
@@ -176,9 +175,9 @@ class _Group(CommandObject):
             # move all floating guys offset to new screen
             self.floating_layout.to_screen(self, self.screen)
             self.layout_all(warp=self.qtile.config.cursor_warp)
-            rect = self.screen.get_rect()
-            self.floating_layout.show(rect)
-            self.layout.show(rect)
+            screen_rect = self.screen.get_rect()
+            self.floating_layout.show(screen_rect)
+            self.layout.show(screen_rect)
         else:
             self.hide()
 
@@ -243,13 +242,13 @@ class _Group(CommandObject):
             windows=[i.name for i in self.windows],
             focus_history=[i.name for i in self.focus_history],
             layout=self.layout.name,
-            layouts=[l.name for l in self.layouts],
+            layouts=[i.name for i in self.layouts],
             floating_info=self.floating_layout.info(),
             screen=self.screen.index if self.screen else None
         )
 
     def add(self, win, focus=True, force=False):
-        hook.fire("group_window_add")
+        hook.fire("group_window_add", self, win)
         self.windows.add(win)
         win.group = self
         try:
@@ -365,7 +364,8 @@ class _Group(CommandObject):
         screen :
             Screen offset. If not specified, we assume the current screen.
         toggle :
-            If this group is already on the screen, then toggle group.
+            If this group is already on the screen, then the group is toggled
+            with last used
 
         Examples
         ========
@@ -400,7 +400,7 @@ class _Group(CommandObject):
         """
 
         def match(group):
-            from . import scratchpad
+            from libqtile import scratchpad
 
             if group is self:
                 return True

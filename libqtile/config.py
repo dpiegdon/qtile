@@ -28,11 +28,12 @@
 import os.path
 import sys
 import warnings
+from typing import List, Optional
 
-from . import configurable
-from . import hook
-from . import utils
+from libqtile import configurable, hook, utils
+from libqtile.bar import BarType
 from libqtile.command_object import CommandObject
+from libqtile.lazy import lazy
 
 
 class Key:
@@ -48,21 +49,51 @@ class Key:
     commands:
         A list of lazy command objects generated with the lazy.lazy helper.
         If multiple Call objects are specified, they are run in sequence.
-    kwargs:
-        A dictionary containing "desc", allowing a description to be added
+    desc:
+        description to be added to the key binding
     """
-    def __init__(self, modifiers, key, *commands, **kwargs):
+    def __init__(self, modifiers: List[str], key: str, *commands, desc: str = ""):
         self.modifiers = modifiers
         self.key = key
         self.commands = commands
-        self.desc = kwargs.get("desc", "")
+        self.desc = desc
 
     def __repr__(self):
         return "<Key (%s, %s)>" % (self.modifiers, self.key)
 
 
+class KeyChord:
+    """Define a key chord aka vim like mode
+
+    Parameters
+    ==========
+    modifiers:
+        A list of modifier specifications. Modifier specifications are one of:
+        "shift", "lock", "control", "mod1", "mod2", "mod3", "mod4", "mod5".
+    key:
+        A key specification, e.g. "a", "Tab", "Return", "space".
+    submappings:
+        A list of Key declarations to bind in this chord
+    mode:
+        A string with vim like mode name if it's set chord not end
+        after use one of submapings or Esc key
+    """
+    def __init__(self, modifiers: List[str], key: str, submapings: List[Key], mode: str = ""):
+        self.modifiers = modifiers
+        self.key = key
+
+        def noop(qtile):
+            pass
+        submapings.append(Key([], "Escape", lazy.function(noop)))
+        self.submapings = submapings
+        self.mode = mode
+
+    def __repr__(self):
+        return "<KeyChord (%s, %s)>" % (self.modifiers, self.key)
+
+
 class Mouse:
-    def __init__(self, modifiers, button, *commands, **kwargs):
+    def __init__(self, modifiers: List[str], button: str, *commands, **kwargs):
         self.focus = kwargs.pop("focus", "before")
         self.modifiers = modifiers
         self.button = button
@@ -95,9 +126,6 @@ class Click(Mouse):
     It focuses clicked window by default.  If you want to prevent it, pass
     `focus=None` as an argument
     """
-    def __init__(self, modifiers, button, *commands, **kwargs):
-        super().__init__(modifiers, button, *commands, **kwargs)
-
     def __repr__(self):
         return "<Click (%s, %s)>" % (self.modifiers, self.button)
 
@@ -225,21 +253,12 @@ class Screen(CommandObject):
     dimensions. If the mode is 'fill', the image will be centred on the screen and
     resized to fill it. If the mode is 'stretch', the image is stretched to fit all of
     it into the screen.
-
-    Parameters
-    ==========
-    top: Gap/Bar object, or None.
-    bottom: Gap/Bar object, or None.
-    left: Gap/Bar object, or None.
-    right: Gap/Bar object, or None.
-    wallpaper: Dict, or None.
-    x : int or None
-    y : int or None
-    width : int or None
-    height : int or None
     """
-    def __init__(self, top=None, bottom=None, left=None, right=None, wallpaper=None,
-                 wallpaper_mode=None, x=None, y=None, width=None, height=None):
+    def __init__(self, top: Optional[BarType] = None, bottom: Optional[BarType] = None,
+                 left: Optional[BarType] = None, right: Optional[BarType] = None,
+                 wallpaper: Optional[str] = None, wallpaper_mode: Optional[str] = None,
+                 x: Optional[int] = None, y: Optional[int] = None, width: Optional[int] = None,
+                 height: Optional[int] = None):
         self.group = None
         self.previous_group = None
 
@@ -583,32 +602,28 @@ class Match:
 
     def compare(self, client):
         for _type, rule in self._rules:
-            if _type == "net_wm_pid":
-                def match_func(value):
-                    return rule == value
-            else:
-                match_func = getattr(rule, 'match', None) or \
-                    getattr(rule, 'count')
-
-            if _type == 'title':
+            # get value
+            if _type == "title":
                 value = client.name
-            elif _type == 'wm_class':
-                value = None
-                _value = client.window.get_wm_class()
-                if _value and len(_value) > 1:
-                    value = _value[1]
-            elif _type == 'wm_instance_class':
-                value = client.window.get_wm_class()
-                if value:
-                    value = value[0]
-            elif _type == 'wm_type':
-                value = client.window.get_wm_type()
-            elif _type == 'net_wm_pid':
-                value = client.window.get_net_wm_pid()
-            else:
+            elif _type == "wm_instance_class":
+                value = client.window.get_wm_class() and client.window.get_wm_class()[0]
+            elif _type == "role":
                 value = client.window.get_wm_window_role()
+            else:
+                value = getattr(client.window, 'get_' + _type)()
 
-            if value and match_func(value):
+            # compare
+            if _type == "net_wm_pid":
+                if rule == value:
+                    return True
+                else:
+                    continue
+            match = getattr(rule, 'match', None) or getattr(rule, 'count')
+
+            if _type == "wm_class":
+                if any(match(v) for v in value):
+                    return True
+            elif value is not None and match(value):
                 return True
         return False
 

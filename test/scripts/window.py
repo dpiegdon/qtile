@@ -25,19 +25,9 @@
 """
 import sys
 import time
+
 import xcffib
 import xcffib.xproto
-
-
-def configure(window):
-    window.configure(
-        width=100,
-        height=100,
-        x=0,
-        y=0,
-        border_width=1,
-    )
-
 
 for i in range(20):
     try:

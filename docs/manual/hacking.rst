@@ -1,3 +1,5 @@
+.. _hacking:
+
 ================
 Hacking on Qtile
 ================
@@ -8,8 +10,8 @@ Requirements
 Any reasonably recent version of these should work, so you can probably just
 install them from your package manager.
 
-* `pytest <http://pytest.org/latest/>`_
-* `Xephyr <http://www.freedesktop.org/wiki/Software/Xephyr>`_
+* `pytest <https://docs.pytest.org>`_
+* `Xephyr <https://freedesktop.org/wiki/Software/Xephyr/>`_
 * ``xrandr``, ``xcalc``, ``xeyes`` and ``xclock`` (``x11-apps`` on Ubuntu)
 
 On Ubuntu, if testing on Python 3, this can be done with:
@@ -23,6 +25,9 @@ On ArchLinux, the X11 requirements are installed with:
 .. code-block:: bash
 
     sudo pacman -S xorg-xrandr xorg-xcalc xorg-xeyes xorg-xclock
+    
+To build the documentation, you will also need to install `graphviz <https://www.graphviz.org/download/>`_.
+On ArchLinux, you can install it with ``sudo pacman -S graphviz``.
 
 
 Building cffi module
@@ -37,6 +42,28 @@ by calling:
 .. code-block:: bash
 
     ./scripts/ffibuild
+
+Setting up the environment
+==========================
+
+In the root of the project, run ``./dev.sh``.
+It will create a virtualenv called ``venv``.
+
+Activate this virtualenv with ``. venv/bin/activate``.
+Deactivate it with the ``deactivate`` command.
+
+Building the documentation
+==========================
+
+Activate your virtualenv, and install the ``graphviz`` Python package:
+
+    pip install graphviz
+    
+Go into the ``docs/`` directory and run ``pip install -r requirements.txt``.
+
+Build the documentation with ``make html``.
+
+Check the result by opening ``_build/html/index.html`` in your browser.
 
 Development and testing
 =======================
@@ -56,13 +83,13 @@ can see whether or not your contribution passes.
 Coding style
 ============
 
-While not all of our code follows `PEP8 <http://www.python.org/dev/peps/pep-0008/>`_,
+While not all of our code follows `PEP8 <https://www.python.org/dev/peps/pep-0008/>`_,
 we do try to adhere to it where possible. All new code should be PEP8 compliant.
 
 The ``make lint`` command will run a linter with our configuration over libqtile
 to ensure your patch complies with reasonable formatting constraints. We also
 request that git commit messages follow the
-`standard format <http://tbaggery.com/2008/04/19/a-note-about-git-commit-messages.html>`_.
+`standard format <https://tbaggery.com/2008/04/19/a-note-about-git-commit-messages.html>`_.
 
 Deprecation policy
 ==================
@@ -157,14 +184,86 @@ demonstrate the bug, and paste the contents of this file into the bug report.
 
 Note that xtrace may be named ``x11trace`` on some platforms, for example, on Fedora.
 
+Debugging in PyCharm
+====================
+
+Make sure to have all the requirements installed and your development environment setup.
+
+PyCharm should automatically detect the ``venv`` virtualenv when opening the project.
+If you are using another viirtualenv, just instruct PyCharm to use it
+in ``Settings -> Project: qtile -> Project interpreter``.
+
+In the project tree, on the left, right-click on the ``libqtile`` folder,
+and click on ``Mark Directory as -> Sources Root``.
+
+Next, add a Configuration using a Python template with these fields:
+
+- Script path: ``bin/qtile``, or the absolute path to it
+- Parameters: ``-c libqtile/resources/default_config.py``,
+  or nothing if you want to use your own config file in ``~/.config/qtile/config.py``
+- Environment variables: ``PYTHONUNBUFFERED=1;DISPLAY=:1``
+- Working directory: the root of the project
+- Add contents root to PYTHONPATH: yes
+- Add source root to PYTHONPATH: yes
+
+Then, in a terminal, run:
+
+    Xephyr +extension RANDR -screen 1920x1040 :1 -ac &
+    
+Note that we used the same display, ``:1``, in both the terminal command
+and the PyCharm configuration environment variables.
+Feel free to change the screen size to fit your own screen.
+
+Finally, place your breakpoints in the code and click on ``Debug``!
+
+Once you finished debugging, you can close the Xephyr window with ``kill PID``
+(use the ``jobs`` builtin to get its PID).
+
+Debugging in VSCode
+===================
+
+Make sure to have all the requirements installed and your development 
+environment setup.
+
+Open the root of the repo in VSCode.  If you have created it, VSCode should 
+detect the ``venv`` virtualenv, if not, select it.
+
+Create a launch.json file with the following lines.
+
+.. code-block:: json
+
+  {
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Qtile",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/bin/qtile",
+            "cwd": "${workspaceFolder}",
+            "args": ["-c", "libqtile/resources/default_config.py"],
+            "console": "integratedTerminal",
+            "env": {"PYTHONUNBUFFERED":"1", "DISPLAY":":1"}
+        }
+    ]
+  }
+
+Then, in a terminal, run:
+
+    Xephyr +extension RANDR -screen 1920x1040 :1 -ac &
+    
+Note that we used the same display, ``:1``, in both the terminal command
+and the VSCode configuration environment variables.  Then ``debug`` usually 
+in VSCode. Feel free to change the screen size to fit your own screen.
+
 Resources
 =========
 
 Here are a number of resources that may come in handy:
 
-* `Inter-Client Conventions Manual <http://tronche.com/gui/x/icccm/>`_
-* `Extended Window Manager Hints <http://standards.freedesktop.org/wm-spec/wm-spec-latest.html>`_
-* `A reasonable basic Xlib Manual <http://tronche.com/gui/x/xlib/>`_
+* `Inter-Client Conventions Manual <https://tronche.com/gui/x/icccm/>`_
+* `Extended Window Manager Hints <https://specifications.freedesktop.org/wm-spec/wm-spec-latest.html>`_
+* `A reasonable basic Xlib Manual <https://tronche.com/gui/x/xlib/>`_
 
 
 Troubleshoot
@@ -214,16 +313,17 @@ system and/or in your Qtile virtualenv.
 
 To fix this:
 
-1. follow the installation instructions of ``PyGObject``
-   at https://pygobject.readthedocs.io/en/latest/getting_started.html.
+1. Follow the `installation instructions`_ of ``PyGObject``.
    There are methods for several Linux distributions: pick yours.
-#. there are instructions for system-wide installation and virtualenv
+#. There are instructions for system-wide installation and virtualenv
    installation: pick the relevant one, depending on how you installed the
-   development version of QTile (usually in a virtualenv).
-#. Optionally re-install QTile's dependencies::
+   development version of Qtile (usually in a virtualenv).
+#. Optionally re-install Qtile's dependencies::
 
     pip install -r requirements.txt
     pip install -r requirements-dev.txt
+
+.. _`installation instructions`: https://pygobject.readthedocs.io/en/latest/getting_started.html
 
 
 Fonts errors

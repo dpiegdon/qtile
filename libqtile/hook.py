@@ -30,20 +30,13 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from .log_utils import logger
-from . import utils
+from typing import Dict, Set
 
-from typing import Dict, Set  # noqa: F401
-
+from libqtile import utils
+from libqtile.log_utils import logger
 
 subscriptions = {}  # type: Dict
 SKIPLOG = set()  # type: Set
-qtile = None
-
-
-def init(q):
-    global qtile
-    qtile = q
 
 
 def clear():
@@ -108,7 +101,6 @@ class Subscribe:
 
         **Arguments**
 
-            * qtile manager instance
             * name of new group
         """
         return self._subscribe("addgroup", func)
@@ -118,7 +110,6 @@ class Subscribe:
 
         **Arguments**
 
-            * qtile manager instance
             * name of deleted group
         """
         return self._subscribe("delgroup", func)
@@ -191,7 +182,7 @@ class Subscribe:
                 if c.name == "xterm":
                     c.togroup("a")
                 elif c.name == "dzen":
-                    c.static(0)
+                    c.cmd_static(0)
         """
         return self._subscribe("client_new", func)
 
@@ -215,20 +206,6 @@ class Subscribe:
             * ``window.Window`` object of the killed window.
         """
         return self._subscribe("client_killed", func)
-
-    def client_state_changed(self, func):
-        """Called whenever client state changes
-
-        Never fires
-        """
-        return self._subscribe("client_state_changed", func)
-
-    def client_type_changed(self, func):
-        """Called whenever window type changes
-
-        Never fires
-        """
-        return self._subscribe("client_type_changed", func)
 
     def client_focus(self, func):
         """Called whenever focus changes
@@ -315,7 +292,6 @@ class Subscribe:
 
         **Arguments**
 
-            * qtile manager instance
             * ``xproto.randr.ScreenChangeNotify`` event
 
         Examples
@@ -324,8 +300,8 @@ class Subscribe:
         ::
 
             @libqtile.hook.subscribe.screen_change
-            def restart_on_randr(qtile, ev):
-                qtile.cmd_restart()
+            def restart_on_randr(ev):
+                libqtile.qtile.cmd_restart()
         """
         return self._subscribe("screen_change", func)
 
@@ -337,6 +313,24 @@ class Subscribe:
         None
         """
         return self._subscribe("current_screen_change", func)
+
+    def enter_chord(self, func):
+        """Called when key chord begins
+
+        **Arguments**
+
+            * name of chord(mode)
+        """
+        return self._subscribe("enter_chord", func)
+
+    def leave_chord(self, func):
+        """Called when key chord ends
+
+        **Arguments**
+
+        None
+        """
+        return self._subscribe("leave_chord", func)
 
 
 subscribe = Subscribe()

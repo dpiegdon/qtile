@@ -17,7 +17,8 @@ Qtile looks in the following places for a configuration file, in order:
 * It reads the module ``libqtile.resources.default_config``, included by
   default with every Qtile installation.
 
-Qtile will try to create the configuration file as a copy of the default config, if it doesn't exist yet.
+Qtile will try to create the configuration file as a copy of the default
+config, if it doesn't exist yet.
 
 Default Configuration
 =====================
@@ -49,7 +50,7 @@ key. The basic operation is:
 * ``mod + <ctrl> + r``: restart qtile with new config
 * ``mod + <group name>``: switch to that group
 * ``mod + <shift> + <group name>``: send a window to that group
-* ``mod + <enter>``: start xterm
+* ``mod + <enter>``: start terminal guessed by ``libqtile.utils.guess_terminal``
 * ``mod + r``: start a little prompt in the bar so users can run arbitrary
   commands
 
@@ -60,6 +61,9 @@ a system tray, and a clock.
 
 The default configuration has several more advanced key combinations, but the
 above should be enough for basic usage of qtile.
+
+See :ref:`Keybindings in images <keybinding-img>` for visual
+keybindings in keyboard layout.
 
 Mouse Bindings
 --------------
@@ -146,18 +150,12 @@ configuration variables that control specific aspects of Qtile's behavior:
         - focus: automatically focus the window
 
         - smart: automatically focus if the window is in the current group
+
+        - never: never automatically focus any window that requests it
     * - follow_mouse_focus
       - True
       - Controls whether or not focus follows the mouse around as it moves
         across windows in a layout.
-    * - main
-      - None
-      - This is a function which takes one argument, the qtile object,
-        and is run after the qtile object has been initialized. This
-        allows people to monkey patch in any code they want to before
-        qtile actually starts. Note that we only consider the config
-        objects and hooks to be public APIs, and reserve the right to
-        refactor the internals at any time. Use at your own risk!
     * - widget_defaults
       - dict(font='sans',
              fontsize=12,
@@ -183,7 +181,7 @@ script. This will run Qtile with your ``config.py`` inside a nested X server
 and prevent your running instance of Qtile from crashing if something goes
 wrong.
 
-See :doc:`Hacking Qtile </manual/hacking>` for more information on using
+See :ref:`Hacking Qtile <hacking>` for more information on using
 Xephyr.
 
 Starting Qtile
@@ -205,10 +203,22 @@ create your own ``~/.xsession``. There are several examples of user defined
 ``xsession`` s in the `qtile-examples
 <https://github.com/qtile/qtile-examples>`_ repository.
 
+If there is no display manager such as SDDM, LightDM or other and there is need
+to start Qtile directly from ``~/.xinitrc`` do that by adding ``exec qtile`` at
+the end.
+
+In very special cases, ex. Qtile crashing during session, then suggestion would
+be to start through a loop to save running applications::
+
+    while true; do
+        qtile
+    done
+
 Finally, if you're a gnome user, you can start integrate Qtile into Gnome's
-session manager and use gnome as usual:
+session manager and use gnome as usual.
 
 .. toctree::
     :maxdepth: 1
 
+    without-dm
     gnome

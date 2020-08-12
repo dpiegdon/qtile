@@ -21,17 +21,17 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-import pytest
+import logging
 from multiprocessing import Value
 
-import libqtile.log_utils
-import libqtile.core
-import libqtile.utils
-import libqtile.hook
-import logging
-from libqtile.resources import default_config
+import pytest
 
-from .conftest import BareConfig
+import libqtile.core
+import libqtile.hook
+import libqtile.log_utils
+import libqtile.utils
+from libqtile.resources import default_config
+from test.conftest import BareConfig
 
 # TODO: more tests required.
 # 1. Check all hooks that can be fired
@@ -52,7 +52,7 @@ def hook_fixture():
 
     dummy = Dummy()
     libqtile.log_utils.init_log(logging.CRITICAL, log_path=None, log_color=False)
-    libqtile.hook.init(dummy)
+    libqtile.init(dummy)
 
     yield
 

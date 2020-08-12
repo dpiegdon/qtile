@@ -18,8 +18,11 @@ running something else, please see `Installing From Source`_.
     Slackware <slackware>
     FreeBSD <freebsd>
 
+.. _installing-from-source:
+
 Installing From Source
 ======================
+
 
 First, you need to install all of Qtile's dependencies (although some are
 optional/not needed depending on your Python version, as noted below).
@@ -117,7 +120,7 @@ system for user ``foo``, it should work on other Linux systems too.
        #!/bin/bash
 
        source ~/local/qtile/venv/bin/activate
-       python ~/local/qtile/bin/qtile $*
+       python3 ~/local/qtile/bin/qtile $*
        EOF
 
 #. Create an xsession file.

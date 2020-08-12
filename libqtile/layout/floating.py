@@ -28,7 +28,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from .base import Layout
+from libqtile.layout.base import Layout
 
 DEFAULT_FLOAT_WM_TYPES = set([
     'utility',
@@ -80,12 +80,11 @@ class Floating(Layout):
 
         Specify these in the ``floating_layout`` in your config.
 
-        Floating layout will try to center most of floating windows by
-        default (until hints are properly implemented), but if you don't
-        want this to happen for certain windows that are centered by mistake,
-        you can use ``no_reposition_match`` option to specify them and layout
-        will rely on windows to position themselves in correct location on
-        the screen.
+        Floating layout will try to center most of floating windows by default,
+        but if you don't want this to happen for certain windows that are
+        centered by mistake, you can use ``no_reposition_match`` option to
+        specify them and layout will rely on windows to position themselves in
+        correct location on the screen.
         """
         Layout.__init__(self, **config)
         self.clients = []
@@ -178,24 +177,70 @@ class Floating(Layout):
     def blur(self):
         self.focused = None
 
-    def configure(self, client, screen):
-        # 'sun-awt-X11-XWindowPeer' is a dropdown used in Java application,
-        # don't reposition it anywhere, let Java app to control it
-        cls = client.window.get_wm_class() or ''
-        is_java_dropdown = 'sun-awt-X11-XWindowPeer' in cls
-        if is_java_dropdown:
-            return
+    def compute_client_position(self, client, screen_rect):
+        """ recompute client.x and client.y, returning whether or not to place
+        this client above other windows or not """
+        above = False
+        transient_for = client.window.get_wm_transient_for()
+        win = client.group.qtile.windows_map.get(transient_for)
+        if win is not None:
+            # if transient for a window, place in the center of the window
+            center_x = win.x + win.width / 2
+            center_y = win.y + win.height / 2
+        else:
+            center_x = screen_rect.x + screen_rect.width / 2
+            center_y = screen_rect.y + screen_rect.height / 2
+            above = True
 
+        x = center_x - client.width / 2
+        y = center_y - client.height / 2
+
+        # don't go off the right...
+        x = min(x, screen_rect.x + screen_rect.width)
+        # or left...
+        x = max(x, screen_rect.x)
+        # or bottom...
+        y = min(y, screen_rect.y + screen_rect.height)
+        # or top
+        y = max(y, screen_rect.y)
+
+        client.x = int(round(x))
+        client.y = int(round(y))
+        return above
+
+    def configure(self, client, screen_rect):
         if client.has_focus:
             bc = client.group.qtile.color_pixel(self.border_focus)
         else:
             bc = client.group.qtile.color_pixel(self.border_normal)
+
         if client.maximized:
             bw = self.max_border_width
         elif client.fullscreen:
             bw = self.fullscreen_border_width
         else:
             bw = self.border_width
+
+        # 'sun-awt-X11-XWindowPeer' is a dropdown used in Java application,
+        # don't reposition it anywhere, let Java app to control it
+        cls = client.window.get_wm_class() or ''
+        is_java_dropdown = 'sun-awt-X11-XWindowPeer' in cls
+        if is_java_dropdown:
+            client.user_placed_window_setup(bc, bw)
+            return
+
+        # similar to above but the X11 version, the client may have already
+        # placed itself. let's respect that
+        if client.has_user_set_position():
+            client.user_placed_window_setup(bc, bw)
+            return
+
+        # ok, it's not java and the window itself didn't position it, but users
+        # may still have asked us not to mess with it
+        if self.no_reposition_match is not None and self.no_reposition_match.compare(client):
+            client.user_placed_window_setup(bc, bw)
+            return
+
         above = False
 
         # We definitely have a screen here, so let's be sure we'll float on screen
@@ -204,32 +249,7 @@ class Floating(Layout):
             client.float_y
         except AttributeError:
             # this window hasn't been placed before, let's put it in a sensible spot
-            transient_for = client.window.get_wm_transient_for()
-            win = client.group.qtile.windows_map.get(transient_for)
-            if win is not None:
-                # if transient for a window, place in the center of the window
-                center_x = win.x + win.width / 2
-                center_y = win.y + win.height / 2
-            else:
-                center_x = screen.x + screen.width / 2
-                center_y = screen.y + screen.height / 2
-                above = True
-
-            x = center_x - client.width / 2
-            y = center_y - client.height / 2
-
-            # don't go off the right...
-            x = min(x, screen.x + screen.width)
-            # or left...
-            x = max(x, screen.x)
-            # or bottom...
-            y = min(y, screen.y + screen.height)
-            # or top
-            y = max(y, screen.y)
-
-            if not (self.no_reposition_match and self.no_reposition_match.compare(client)):
-                client.x = int(round(x))
-                client.y = int(round(y))
+            above = self.compute_client_position(client, screen_rect)
 
         client.place(
             client.x,

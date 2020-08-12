@@ -28,11 +28,8 @@
 import collections
 
 import libqtile.hook
-from libqtile.config import Key
 from libqtile.command import lazy
-from libqtile.config import Group
-from libqtile.config import Rule
-from libqtile.config import Match
+from libqtile.config import Group, Key, Match, Rule
 from libqtile.log_utils import logger
 
 
@@ -146,7 +143,7 @@ class DGroups:
                 lambda: self.key_binder(self)
             )
 
-    def _addgroup(self, qtile, group_name):
+    def _addgroup(self, group_name):
         if group_name not in self.groups_map:
             self.add_dgroup(Group(group_name, persist=False))
 

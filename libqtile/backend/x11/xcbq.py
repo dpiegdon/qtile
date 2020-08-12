@@ -34,26 +34,25 @@
     A minimal EWMH-aware OO layer over xcffib. This is NOT intended to be
     complete - it only implements the subset of functionalty needed by qtile.
 """
-from collections import OrderedDict
-from itertools import repeat, chain
-import operator
 import functools
+import operator
 import typing
+from collections import OrderedDict
+from itertools import chain, repeat
 
-from xcffib.xproto import CW, WindowClass, EventMask
-from xcffib.xfixes import SelectionEventMask
-
+import cairocffi
+import cairocffi.pixbuf
+import cairocffi.xcb
 import xcffib
 import xcffib.randr
 import xcffib.xinerama
 import xcffib.xproto
-
-import cairocffi
-import cairocffi.xcb
+from xcffib.xfixes import SelectionEventMask
+from xcffib.xproto import CW, EventMask, WindowClass
 
 from libqtile import xkeysyms
+from libqtile.backend.x11.xcursors import Cursors
 from libqtile.log_utils import logger
-from .xcursors import Cursors
 
 keysyms = xkeysyms.keysyms
 
@@ -684,7 +683,7 @@ class Window:
                 value
             ).check()
         except xcffib.xproto.WindowError:
-            logger.warning(
+            logger.debug(
                 'X error in SetProperty (wid=%r, prop=%r), ignoring',
                 self.wid, name)
 
@@ -714,7 +713,7 @@ class Window:
                 0, (2 ** 32) - 1
             ).reply()
         except (xcffib.xproto.WindowError, xcffib.xproto.AccessError):
-            logger.warning(
+            logger.debug(
                 'X error in GetProperty (wid=%r, prop=%r), ignoring',
                 self.wid, prop)
             if unpack:
@@ -747,63 +746,6 @@ class Window:
     def get_attributes(self):
         return self.conn.conn.core.GetWindowAttributes(self.wid).reply()
 
-    def ungrab_key(self, key, modifiers):
-        """Passing None means any key, or any modifier"""
-        if key is None:
-            key = xcffib.xproto.Atom.Any
-        if modifiers is None:
-            modifiers = xcffib.xproto.ModMask.Any
-        self.conn.conn.core.UngrabKey(key, self.wid, modifiers)
-
-    def grab_key(self, key, modifiers, owner_events,
-                 pointer_mode, keyboard_mode):
-        self.conn.conn.core.GrabKey(
-            owner_events,
-            self.wid,
-            modifiers,
-            key,
-            pointer_mode,
-            keyboard_mode
-        )
-
-    def ungrab_button(self, button, modifiers):
-        """Passing None means any key, or any modifier"""
-        if button is None:
-            button = xcffib.xproto.Atom.Any
-        if modifiers is None:
-            modifiers = xcffib.xproto.ModMask.Any
-        self.conn.conn.core.UngrabButton(button, self.wid, modifiers)
-
-    def grab_button(self, button, modifiers, owner_events,
-                    event_mask, pointer_mode, keyboard_mode):
-        self.conn.conn.core.GrabButton(
-            owner_events,
-            self.wid,
-            event_mask,
-            pointer_mode,
-            keyboard_mode,
-            xcffib.xproto.Atom._None,
-            xcffib.xproto.Atom._None,
-            button,
-            modifiers,
-        )
-
-    def grab_pointer(self, owner_events, event_mask, pointer_mode,
-                     keyboard_mode, cursor=None):
-        self.conn.conn.core.GrabPointer(
-            owner_events,
-            self.wid,
-            event_mask,
-            pointer_mode,
-            keyboard_mode,
-            xcffib.xproto.Atom._None,
-            cursor or xcffib.xproto.Atom._None,
-            xcffib.xproto.Atom._None,
-        )
-
-    def ungrab_pointer(self):
-        self.conn.conn.core.UngrabPointer(xcffib.xproto.Atom._None)
-
     def query_tree(self):
         q = self.conn.conn.core.QueryTree(self.wid).reply()
         root = None
@@ -834,6 +776,7 @@ class Connection:
     _extmap = {
         "xinerama": Xinerama,
         "randr": RandR,
+        "xfixes": XFixes,
     }
 
     def __init__(self, display):
@@ -845,7 +788,6 @@ class Connection:
         self.screens = [Screen(self, i) for i in self.setup.roots]
         self.default_screen = self.screens[self.conn.pref_screen]
 
-        self.xfixes = XFixes(self)
         for i in extensions:
             if i in self._extmap:
                 setattr(self, i, self._extmap[i](self))
@@ -946,7 +888,10 @@ class Connection:
         return Window(self, wid)
 
     def disconnect(self):
-        self.conn.disconnect()
+        try:
+            self.conn.disconnect()
+        except xcffib.ConnectionException:
+            logger.error("Failed to disconnect, connection already failed?")
         self._connected = False
 
     def flush(self):
@@ -975,6 +920,20 @@ class Connection:
             i.name.to_string().lower()
             for i in self.conn.core.ListExtensions().reply().names
         )
+
+    def fixup_focus(self):
+        """
+        If the X11 focus is set to None, all keypress events are discarded,
+        which makes our hotkeys not work. This fixes up the focus so it is not
+        None.
+        """
+        window = self.conn.core.GetInputFocus().reply().focus
+        if window == xcffib.xproto.InputFocus._None:
+            self.conn.core.SetInputFocus(
+                xcffib.xproto.InputFocus.PointerRoot,
+                xcffib.xproto.InputFocus.PointerRoot,
+                xcffib.xproto.Time.CurrentTime,
+            )
 
 
 class Painter:

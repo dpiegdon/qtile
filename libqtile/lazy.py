@@ -18,11 +18,15 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import Dict, List, Optional, Tuple  # noqa: F401
+from typing import Dict, Iterable, List, Optional, Set, Tuple, Union
 
 from libqtile.command_client import InteractiveCommandClient
+from libqtile.command_graph import (
+    CommandGraphCall,
+    CommandGraphNode,
+    SelectorType,
+)
 from libqtile.command_interface import CommandInterface
-from libqtile.command_graph import CommandGraphCall, CommandGraphNode, SelectorType
 
 
 class LazyCall:
@@ -42,7 +46,7 @@ class LazyCall:
         self._args = args
         self._kwargs = kwargs
 
-        self._layout = None  # type: Optional[str]
+        self._layouts = set()  # type: Set[str]
         self._when_floating = True
 
     @property
@@ -65,23 +69,37 @@ class LazyCall:
         """The kwargs to the given call"""
         return self._kwargs
 
-    def when(self, layout=None, when_floating=True):
-        self._layout = layout
+    def when(self, layout: Optional[Union[Iterable[str], str]] = None,
+             when_floating: bool = True) -> 'LazyCall':
+        """Enable call only for given layout(s) and floating state
+
+        Parameters
+        ----------
+        layout : str, Iterable[str], or None
+            Restrict call to one or more layouts.
+            If None, enable the call for all layouts.
+        when_floating : bool
+            Enable call when the current window is floating.
+        """
+        if layout is not None:
+            self._layouts = {layout} if isinstance(layout, str) else set(layout)
+
         self._when_floating = when_floating
+        return self
 
     def check(self, q) -> bool:
-        if self._layout is not None:
-            if self._layout == 'floating':
-                if q.current_window.floating:
-                    return True
-                return False
-            if q.current_layout.name != self._layout:
-                if q.current_window and q.current_window.floating and not self._when_floating:
-                    return False
+        cur_win_floating = q.current_window and q.current_window.floating
+
+        if cur_win_floating and not self._when_floating:
+            return False
+
+        if self._layouts and q.current_layout.name not in self._layouts:
+            return False
+
         return True
 
 
-class LazyCommandObject(CommandInterface):
+class LazyCommandInterface(CommandInterface):
     """A lazy loading command object
 
     Allows all commands and items to be resolved at run time, and returns
@@ -96,9 +114,9 @@ class LazyCommandObject(CommandInterface):
         """Lazily resolve the given command"""
         return True
 
-    def has_item(self, node: CommandGraphNode, object_type: str, item: str) -> bool:
+    def has_item(self, node: CommandGraphNode, object_type: str, item: Union[str, int]) -> bool:
         """Lazily resolve the given item"""
         return True
 
 
-lazy = InteractiveCommandClient(LazyCommandObject())
+lazy = InteractiveCommandClient(LazyCommandInterface())

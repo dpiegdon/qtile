@@ -1,3 +1,92 @@
+qtile X.X.X, released XXXX-XX-XX:
+    !!! Config breakage !!!
+	- Hooks 'addgroup', 'delgroup' and 'screen_change' will no longer
+	  receive the qtile object as an argument. It can be accessed directly
+	  at libqtile.qtile.
+    !!! deprecation warning !!!
+	- defining a main function in your config is deprecated. You should use
+	  @hook.subscribe.startup_complete instead. If you need access to the
+	  qtile object, import it from libqtile directly.
+
+qtile 0.16.0, released 2020-07-20:
+    !!! Config breakage !!!
+        - Imports from libqtile.widget are now made through a function
+          proxy to avoid the side effects of importing all widgets at
+          once. If you subclass a widget in your config, import it from
+          its own module.
+          e.g. from libqtile.widget.pomodoro import Pomodoro
+    * features
+        - added `guess_terminal` in utils
+        - added keybinding cheet sheet image generator
+        - custom keyboardlayout display
+        - added native support for key chords
+        - validate config before restart and refuse to restart with a bad
+          config
+        - added a bunch of type annotations to config objects (more to come)
+    * bugfixes
+        - major focus rework; Java-based IDEs such as PyCharm, NetBrains, etc.
+          now focus correctly
+        - fix a bug where spotify (or any window with focus-to=parent) was
+          closed, nothing would be focused and no hotkeys would work
+        - support windows unsetting the input hint
+        - respects window's/user's location setting if present (WM_SIZE_HINTS)
+        - fixed YahooWeather widget for new API
+        - fix a bug where _NET_WM_DESKTOPS wasn't correctly updated when
+          switching screens in some cases
+        - fix a crash in the BSP layout
+        - fix a stacktrace when unknown keysyms are encounted
+        - make qtile --version output more sane
+        - fix a rendering issue with special characters in window names
+        - keyboard widget no longer re-sets the keyboard settings every second
+        - fix qtile-top with the new IPC model
+        - Image widget respects its background setting now
+        - correctly re-draw non-focused screens on qtile restart
+        - fix a crash when decoding images
+        - fix the .when() constraint for lazy objects
+
+qtile 0.15.1, released 2020-04-14
+    * bugfixes
+	- fix qtile reload (it was crashing)
+
+qtile 0.15.0, released 2020-04-12:
+    !!! Config breakage !!!
+        - removed the mpd widget, which depended on python-mpd.
+	- the Clock widget now requires pytz to handle timezones that are
+	  passed as string
+	- libqtile.command.Client does not exist anymore and has been
+	  replaced by libqtile.command_client.CommandClient
+    !!! deprecation warning !!!
+	- libqtile.command.lazy is deprecated in favor of libqtile.lazy.lazy
+    * features
+	- Python 3.8 support
+	- `wallpaper` and `wallpaper_mode` for screens
+	- bars can now have margins
+	- `lazy.toscreen` called twice will now toggle the groups
+	  (optional with the `toggle` parameter)
+	- `lazy.window.togroup` now has `switch_group` parameter to follow
+	  the window to the group it is sent to
+	- qtile now copies the default config if the config file does not exist
+	- all widgets now use Pango markup by default
+	- add an `fmt` option for all textbox widgets
+	- new PulseVolume widget for controlling PulseAudio
+	- new QuickExit widget, mainly for the default config
+	- new non-graph CPU widget
+	- KeyboardLayout widget: new `options` parameter
+	- CheckUpdates widget: support ArchLinux yay
+	- GroupBox widget: new `block_highlight_text_color` parameter
+	- Mpd2 widget: new `color_progress` parameter
+	- Maildir widget can now display the inbox grand total
+	- the Net widget can now use bits as unit
+	- Spacer widget: new `background_color` parameter
+	- More consistent resize behavior in Columns layout
+	- various improvements of the default config
+	- large documentation update and improvements (e.g. widget
+	  dependencies)
+    * bugfixes
+	- qtile binary: don't fail if we can't set the locale
+	- don't print help if qtile-cmd function returns nothing
+	- Monad layout: fix margins when flipped
+
 qtile 0.14.2, released 2019-06-19:
     * bugfixes
         - previous release still exhibited same issues with package data,
